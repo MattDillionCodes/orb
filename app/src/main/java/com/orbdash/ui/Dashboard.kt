@@ -193,7 +193,9 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
 
     fun move(delta: Int) {
         if (screen == Screen.Home) {
-            val next = (homeIndex + delta).coerceIn(0, homeItems.lastIndex)
+            // The pods form a wheel that wraps from the last item back to the first (matches MainMenu).
+            val n = homeItems.size
+            val next = if (n >= 2) ((homeIndex + delta) % n + n) % n else (homeIndex + delta).coerceIn(0, n - 1)
             if (next != homeIndex) { homeIndex = next; sfx.move() }
         } else {
             val next = (listIndex + delta).coerceIn(0, (entries.size - 1).coerceAtLeast(0))
@@ -228,7 +230,8 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val focusTarget = if (home) Offset(0.29f, 0.5f) else Offset(0.97f, 0.12f)
     val veinFocusAnim by animateOffsetAsState(focusTarget, tween(450), label = "veins")
     val veinFocus = if (reduced) focusTarget else veinFocusAnim
-    val tilt = if (home) (homeIndex - (homeItems.size - 1) / 2f).coerceIn(-3f, 3f) else (listIndex.coerceAtMost(8) - 4f) * 0.5f
+    // Home keeps the camera level: the focused pod is always in the middle of the wheel.
+    val tilt = if (home) 0f else (listIndex.coerceAtMost(8) - 4f) * 0.5f
     val cameraAnim by animateOffsetAsState(Offset(-0.004f * tilt, -0.012f * tilt), tween(600), label = "camera")
     val camera = if (reduced) Offset.Zero else cameraAnim
     val tunnelAnim by animateFloatAsState(if (home) 0.3f else 1f, tween(500), label = "tunnel")

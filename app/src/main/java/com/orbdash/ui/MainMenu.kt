@@ -20,6 +20,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -47,9 +49,11 @@ data class MenuItem(val label: String, val sub: String?, val blurb: String, val 
 private val PodWidth = 320.dp
 private val PodHeight = 52.dp
 private const val SPACING_DP = 62f
-/** Pods this many slots from the focused one are fully visible; they're gone by +0.5 more, which keeps
- *  the wheel clear of the clock above and the info panel below. */
-private const val VISIBLE_SLOTS = 1.9f
+/** Two pods above and two below the focused one are fully visible (five in all); anything further
+ *  fades out within half a slot, which keeps the wheel clear of the clock and the info panel. */
+private const val VISIBLE_SLOTS = 2.05f
+/** With at least this many items the wheel wraps around, so the focused pod is always in the middle. */
+private const val WRAP_AT = 2
 
 /**
  * Home: the orb sits in the left third; menu pods hang off it on an arc to the right,
@@ -62,8 +66,32 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
     // so a TV with forty apps works the same as one with four.
     // The scroll position is only ever read inside draw/layout lambdas, never during composition,
     // so scrolling moves what's already on screen instead of rebuilding the whole menu every frame.
-    val posState = animateFloatAsState(index.toFloat(), tween(260), label = "wheel")
-    fun fade(i: Int, pos: Float) = 1f - ((abs(i - pos) - VISIBLE_SLOTS) / 0.5f).coerceIn(0f, 1f)
+    //
+    // With 5+ items it wraps around: positions are "virtual" (unbounded) so going from the last item
+    // to the first turns the wheel one step instead of spinning all the way back.
+    val n = items.size
+    val wraps = n >= WRAP_AT
+    val wheelHolder = remember { intArrayOf(index) }
+    if (wraps) {
+        var d = ((index - wheelHolder[0]) % n + n) % n
+        if (d > n / 2) d -= n
+        wheelHolder[0] += d
+    } else {
+        wheelHolder[0] = index
+    }
+    val target = wheelHolder[0]
+    fun itemAt(v: Int) = if (wraps) ((v % n) + n) % n else v
+    // Up to two pods above and two below. Short lists show fewer rather than repeating an app:
+    // 4 items = 1 above + 2 below, 3 = 1 + 1. Long lists keep one extra slot each side to slide in.
+    val above = minOf(2, (n - 1) / 2)
+    val below = minOf(2, n - 1 - above)
+    val slots = when {
+        !wraps -> target..target
+        n > 5 -> (target - 3)..(target + 3)
+        else -> (target - above)..(target + below)
+    }
+    val posState = animateFloatAsState(target.toFloat(), tween(260), label = "wheel")
+    fun fade(v: Int, pos: Float) = 1f - ((abs(v - pos) - VISIBLE_SLOTS) / 0.5f).coerceIn(0f, 1f)
     val reduced = LocalReducedEffects.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = maxWidth
@@ -86,10 +114,11 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
             val t = clock.value
             val o = Offset(ox.toPx(), oy.toPx())
             val pos = posState.value
-            for (i in items.indices) {
-                val f = fade(i, pos)
+            for (v in slots) {
+                val f = fade(v, pos)
                 if (f <= 0f) continue
-                val (px, py) = anchor(i, pos)
+                val (px, py) = anchor(v, pos)
+                val i = itemAt(v)
                 val end = Offset(px.toPx() + 4f, py.toPx())
                 val a = atan2(end.y - o.y, end.x - o.x)
                 val start = Offset(o.x + cos(a) * orbR.toPx() * 0.9f, o.y + sin(a) * orbR.toPx() * 0.9f)
@@ -100,7 +129,7 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                     moveTo(start.x, start.y)
                     cubicTo(start.x + (end.x - start.x) * 0.55f, start.y + sway, end.x - (end.x - start.x) * 0.45f, end.y - sway, end.x, end.y)
                 }
-                val sel = i == index
+                val sel = v == target
                 val width = if (sel) 18f else 12f
                 // Shaded tube: dark body, mid tone, then a highlight offset upwards like a lit cylinder.
                 drawPath(path, Color.Black.copy(alpha = 0.5f * f), style = Stroke(width + 6f, cap = StrokeCap.Round))
@@ -125,30 +154,31 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
         Orb(clock, energy, Modifier.size(orbSize * 1.5f).offset(ox - orbSize * 0.75f, oy - orbSize * 0.75f))
 
         // Only pods near the focus are composed; their position and fade update in the layout/draw phase.
-        for (i in (index - 4).coerceAtLeast(0)..(index + 4).coerceAtMost(items.lastIndex)) {
-            val item = items[i]
+        for (v in slots) key(v) {
+            val item = items[itemAt(v)]
             JellyPill(
                 text = item.label,
                 sub = item.sub,
-                selected = i == index,
+                selected = v == target,
                 height = PodHeight,
                 icon = item.icon.takeIf { item.thumb == null },
                 thumb = item.thumb,
-                depth = (abs(i - index) / 3f).coerceAtMost(1f),
+                depth = (abs(v - target) / 3f).coerceAtMost(1f),
                 modifier = Modifier
                     .offset {
-                        val (px, py) = anchor(i, posState.value)
+                        val (px, py) = anchor(v, posState.value)
                         IntOffset(px.roundToPx(), (py - PodHeight / 2).roundToPx())
                     }
-                    .graphicsLayer { alpha = fade(i, posState.value) }
+                    .graphicsLayer { alpha = fade(v, posState.value) }
                     .width(PodWidth).height(PodHeight),
             )
         }
 
         // "More this way" arrows above and below the wheel.
         val arrowX = ox + arcR + PodWidth / 2 - 60.dp
-        if (index > 1) MoreArrow(up = true, Modifier.offset(arrowX, oy - (SPACING_DP * (VISIBLE_SLOTS + 0.75f)).dp))
-        if (items.size - 1 - index > 1) MoreArrow(up = false, Modifier.offset(arrowX, oy + (SPACING_DP * (VISIBLE_SLOTS + 0.55f)).dp))
+        // A wrapping wheel never ends, so the "more" arrows only show on short, non-wrapping lists.
+        if (!wraps && index > 1) MoreArrow(up = true, Modifier.offset(arrowX, oy - (SPACING_DP * (VISIBLE_SLOTS + 0.75f)).dp))
+        if (!wraps && items.size - 1 - index > 1) MoreArrow(up = false, Modifier.offset(arrowX, oy + (SPACING_DP * (VISIBLE_SLOTS + 0.55f)).dp))
 
         StatusCluster(Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = 48.dp))
 
