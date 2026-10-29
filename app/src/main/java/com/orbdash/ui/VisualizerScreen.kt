@@ -75,7 +75,8 @@ fun VisualizerScreen(player: MusicPlayer, renderer: VisualRenderer, clock: State
     LaunchedEffect(Unit) { while (true) { posMs = player.positionMs(); durMs = player.durationMs(); delay(500) } }
 
     // Overlay shows for 4 s after the last button press (and whenever paused).
-    val showing = !playing || clock.value - wokeAt < 4f
+    // derivedStateOf: the clock ticks every frame, but this screen only needs to rebuild when the answer flips.
+    val showing by androidx.compose.runtime.remember(playing, wokeAt) { androidx.compose.runtime.derivedStateOf { !playing || clock.value - wokeAt < 4f } }
     val overlay by animateFloatAsState(if (showing) 1f else 0f, tween(if (showing) 200 else 900), label = "overlay")
 
     Box(Modifier.fillMaxSize()) {

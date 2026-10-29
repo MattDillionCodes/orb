@@ -2,7 +2,7 @@ package com.orbdash
 
 import android.content.pm.ApplicationInfo
 
-/** The buckets shown as pods on the main orb menu. Every app also appears under ALL. */
+/** The small label shown next to an app's name on its home pod (OTHER shows no label). */
 enum class Category { WATCH, MUSIC, GAMES, OTHER }
 
 /**

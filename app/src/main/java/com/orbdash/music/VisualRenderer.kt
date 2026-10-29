@@ -49,17 +49,23 @@ class VisualRenderer(private val player: MusicPlayer) {
 
     fun image(): ImageBitmap = images[latest]
 
+    // Each start gets a new generation; an old loop that's still finishing its frame sees the change
+    // and exits, so a quick stop-then-start never leaves two threads drawing into the same buffers.
+    @Volatile private var generation = 0
+
     fun start() {
         if (running) return
         running = true
-        worker = thread(name = "visualizer", isDaemon = true) { loop() }
+        val gen = ++generation
+        player.setAnalysisWanted(true)
+        worker = thread(name = "visualizer", isDaemon = true) { loop(gen) }
     }
 
-    fun stop() { running = false; worker = null }
+    fun stop() { running = false; generation++; worker = null; player.setAnalysisWanted(false) }
 
     private class Spark(var x: Float, var y: Float, var vx: Float, var vy: Float, var life: Float)
 
-    private fun loop() {
+    private fun loop(gen: Int) {
         val start = SystemClock.uptimeMillis()
         val feedback = Paint(Paint.FILTER_BITMAP_FLAG)
         val add = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.ADD); style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
@@ -69,7 +75,7 @@ class VisualRenderer(private val player: MusicPlayer) {
         val sparks = ArrayList<Spark>()
         val rnd = Random(9)
         var cur = 0
-        while (running) {
+        while (running && gen == generation) {
             val frameStart = SystemClock.uptimeMillis()
             val t = (frameStart - start) / 1000f
             val b = player.bands(t)

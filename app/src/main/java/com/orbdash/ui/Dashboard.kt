@@ -121,7 +121,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
                 label = app.label,
                 // categorize() labels each app (WATCH / MUSIC / GAMES); plain apps get no label.
                 sub = categorize(app).takeIf { it != Category.OTHER }?.name,
-                blurb = "Press OK to open ${app.label}. Last opened: ${repo.details(app).first().second.lowercase()}.",
+                blurb = "Press OK to open ${app.label}. Last opened: ${repo.lastOpened(app).lowercase()}.",
                 icon = Ico.GRID,
                 thumb = app.icon,
             )
@@ -213,9 +213,9 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     }
     LaunchedEffect(screen == Screen.Section(MUSIC), musicScan) {
         if (screen != Screen.Section(MUSIC) && player.tracks.value.isNotEmpty()) return@LaunchedEffect
-        player.tracks.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        player.setTracks(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             listOf(com.orbdash.music.DemoTrack.get(context)) + com.orbdash.music.MusicLibrary.scan(context)
-        }
+        })
     }
     // Sound analysis needs this permission; ask once, before the first light show starts.
     fun withAnalysis(start: () -> Unit) {

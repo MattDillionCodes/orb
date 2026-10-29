@@ -21,9 +21,12 @@ object DemoTrack {
     private const val BPM = 96.0
     private const val BARS = 16
 
+    // Two Music-screen scans can overlap; only one renders, the other waits for it.
+    @Synchronized
     fun get(context: Context): Track {
         val file = File(context.cacheDir, "orb_drift_v1.wav")
-        if (!file.exists() || file.length() < 1000) render(file)
+        val total = (BARS * 4 * (60.0 / BPM) * RATE).toInt()
+        if (file.length() != 44L + total * 2L) render(file) // missing, or cut short by a crash mid-write
         val ms = (BARS * 4 * 60_000.0 / BPM).toLong()
         return Track("Orb Drift", "OrbDash", "Built-in demo", ms, Uri.fromFile(file))
     }
@@ -73,9 +76,11 @@ object DemoTrack {
         writeWav(file, out)
     }
 
+    /** Writes to a temporary file and renames it into place, so a half-written WAV is never left behind. */
     private fun writeWav(file: File, samples: FloatArray) {
         val dataBytes = samples.size * 2
-        RandomAccessFile(file, "rw").use { f ->
+        val tmp = File(file.path + ".tmp")
+        RandomAccessFile(tmp, "rw").use { f ->
             f.setLength(0)
             fun i32(v: Int) = f.write(byteArrayOf(v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte()))
             fun i16(v: Int) = f.write(byteArrayOf(v.toByte(), (v shr 8).toByte()))
@@ -89,5 +94,6 @@ object DemoTrack {
             }
             f.write(buf)
         }
+        tmp.renameTo(file)
     }
 }

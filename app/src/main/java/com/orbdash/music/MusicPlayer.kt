@@ -2,6 +2,8 @@ package com.orbdash.music
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.audiofx.Visualizer
 import android.net.Uri
@@ -37,6 +39,24 @@ class MusicPlayer(private val context: Context) {
     val followingOther = mutableStateOf(false)
 
     private var player: MediaPlayer? = null
+    // MediaPlayer refuses position/duration/start calls until it has finished loading (it reports an
+    // error rather than throwing), so every call checks this first.
+    private var prepared = false
+    // Cleared by pause(): a song still loading when the user leaves mustn't start behind another app.
+    private var wantPlaying = false
+    // Analysis runs only while the light show is on screen (see setAnalysisWanted).
+    private var analysisWanted = false
+    private var analysisSession = -1
+
+    private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
+    private val audio = context.getSystemService(AudioManager::class.java)
+    // Ask for audio focus like any music app, so other players pause for us and we pause for them.
+    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+        .setAudioAttributes(attributes)
+        .setOnAudioFocusChangeListener { change ->
+            if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) pause("another app took the sound")
+        }
+        .build()
     private var visualizer: Visualizer? = null
     @Volatile private var fft: ByteArray? = null
     @Volatile private var wave: ByteArray? = null
@@ -61,10 +81,16 @@ class MusicPlayer(private val context: Context) {
         val track = list[index]
         val mp = MediaPlayer()
         player = mp
+        wantPlaying = true
         runCatching {
-            mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            mp.setAudioAttributes(attributes)
             mp.setDataSource(context, track.uri)
-            mp.setOnPreparedListener { it.start(); setPlaying(true); attachVisualizer(it.audioSessionId) }
+            mp.setOnPreparedListener {
+                prepared = true
+                analysisSession = it.audioSessionId
+                if (wantPlaying && takeFocus()) { it.start(); setPlaying(true) }
+                syncAnalysis()
+            }
             mp.setOnCompletionListener { next() }
             mp.setOnErrorListener { _, what, extra -> failed(track, "player error what=$what extra=$extra"); true }
             mp.prepareAsync()
@@ -76,7 +102,8 @@ class MusicPlayer(private val context: Context) {
         release()
         current.intValue = -1
         followingOther.value = true
-        attachVisualizer(0) // session 0 = the TV's whole output mix
+        analysisSession = 0 // session 0 = the TV's whole output mix
+        syncAnalysis()
     }
 
     /** Whether the music the light show follows is playing: ours, or the other app's. */
@@ -85,25 +112,48 @@ class MusicPlayer(private val context: Context) {
     fun toggle() {
         if (followingOther.value) return others.toggle()
         val mp = player ?: return play(current.intValue.coerceAtLeast(0))
-        runCatching { if (mp.isPlaying) { mp.pause(); setPlaying(false) } else { mp.start(); setPlaying(true) } }
+        if (!prepared) { wantPlaying = !wantPlaying; return } // still loading: decide whether it starts
+        runCatching {
+            if (mp.isPlaying) { mp.pause(); wantPlaying = false; setPlaying(false) }
+            else if (takeFocus()) { mp.start(); wantPlaying = true; setPlaying(true) }
+        }
     }
 
     /** [reason] goes to the log, so an unexpected pause can be traced later (adb logcat -s OrbDashMusic). */
     fun pause(reason: String = "pause pressed") {
         if (playing.value) Log.i(TAG, "Paused: $reason")
-        runCatching { player?.takeIf { it.isPlaying }?.pause() }; setPlaying(false) }
+        wantPlaying = false
+        if (prepared) runCatching { player?.takeIf { it.isPlaying }?.pause() }
+        setPlaying(false)
+    }
     fun next() { if (followingOther.value) return others.next(); val n = tracks.value.size; if (n > 0) play((current.intValue + 1) % n) }
     fun previous() { if (followingOther.value) return others.previous(); val n = tracks.value.size; if (n > 0) play((current.intValue - 1 + n) % n) }
 
-    fun positionMs(): Int = if (followingOther.value) others.positionMs() else runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
-    fun durationMs(): Int = if (followingOther.value) others.durationMs() else runCatching { player?.duration ?: 0 }.getOrDefault(0)
+    fun positionMs(): Int = if (followingOther.value) others.positionMs() else if (!prepared) 0 else runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
+    fun durationMs(): Int = if (followingOther.value) others.durationMs() else if (!prepared) 0 else runCatching { player?.duration ?: 0 }.getOrDefault(0)
 
-    /** Re-try analysis after the user grants the permission mid-song. */
-    fun retryAnalysis() { if (followingOther.value) attachVisualizer(0) else player?.let { attachVisualizer(it.audioSessionId) } }
+    /**
+     * Swaps in a freshly scanned track list, keeping "now playing" on the same song even if it moved
+     * (a USB drive plugged in shifts everything after it).
+     */
+    fun setTracks(list: List<Track>) {
+        val playingUri = tracks.value.getOrNull(current.intValue)?.uri
+        tracks.value = list
+        if (playingUri != null) current.intValue = list.indexOfFirst { it.uri == playingUri }
+    }
+
+    /**
+     * The light show calls this as it appears and disappears. Analysis (which listens to the sound) only
+     * runs while someone is watching, never while another app is in front.
+     */
+    fun setAnalysisWanted(on: Boolean) { analysisWanted = on; syncAnalysis() }
 
     fun release() {
-        runCatching { visualizer?.release() }; visualizer = null; analysing = false
+        dropAnalysis()
+        analysisSession = -1
         runCatching { player?.release() }; player = null
+        prepared = false; wantPlaying = false
+        audio.abandonAudioFocusRequest(focus)
         setPlaying(false)
     }
 
@@ -112,9 +162,19 @@ class MusicPlayer(private val context: Context) {
         error.value = "Couldn't play this song"
         // A failed player answers every later call (like the time bar asking its position) with another
         // error, so close it now. Pressing OK on the song makes a fresh one and tries again.
+        release()
+    }
+
+    private fun takeFocus() = audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+    private fun syncAnalysis() {
+        val session = if (followingOther.value) 0 else if (prepared) analysisSession else -1
+        if (analysisWanted && session >= 0) { if (visualizer == null) attachVisualizer(session) } else dropAnalysis()
+    }
+
+    private fun dropAnalysis() {
         runCatching { visualizer?.release() }; visualizer = null; analysing = false
-        runCatching { player?.release() }; player = null
-        setPlaying(false)
+        fft = null; wave = null // so a later failed attach can't keep drawing an old waveform
     }
 
     private fun setPlaying(on: Boolean) {

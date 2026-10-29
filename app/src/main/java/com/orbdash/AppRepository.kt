@@ -22,9 +22,6 @@ data class TvApp(
     val component: ComponentName,
     /** Android's own category hint (ApplicationInfo.CATEGORY_*), or -1 if the app never declared one. */
     val declaredCategory: Int,
-    /** 16:9 TV banner if the app ships one, otherwise its square icon. */
-    val art: ImageBitmap?,
-    val artIsBanner: Boolean,
     /** Small square icon for list rows. */
     val icon: ImageBitmap?,
     val isTvApp: Boolean,
@@ -42,15 +39,12 @@ class AppRepository(private val context: Context) {
             for (ri in pm.queryIntentActivities(intent, 0)) {
                 val ai = ri.activityInfo
                 if (ai.packageName == context.packageName || ai.packageName in byPackage) continue
-                val banner = ai.loadBanner(pm) ?: ai.applicationInfo.loadBanner(pm)
                 val icon = ai.loadIcon(pm)
                 byPackage[ai.packageName] = TvApp(
                     label = ri.loadLabel(pm).toString(),
                     packageName = ai.packageName,
                     component = ComponentName(ai.packageName, ai.name),
                     declaredCategory = ai.applicationInfo.category,
-                    art = (banner ?: icon)?.toImageBitmap(if (banner != null) 320 else 192, if (banner != null) 180 else 192),
-                    artIsBanner = banner != null,
                     icon = icon?.toImageBitmap(96, 96),
                     isTvApp = isTv,
                 )
@@ -61,14 +55,8 @@ class AppRepository(private val context: Context) {
         return byPackage.values.sortedBy { it.label.lowercase() }
     }
 
-    /**
-     * What a viewer actually wants to know about an app on the couch: when they last used it.
-     * (Version numbers and install sizes are developer details, so they're left out.)
-     */
-    fun details(app: TvApp): List<Pair<String, String>> = listOf(
-        "LAST OPENED" to relativeDay(prefs.getLong(KEY_OPENED + app.packageName, 0L)),
-        "MADE FOR" to if (app.isTvApp) "TV remote" else "Phone (may need a mouse)",
-    )
+    /** What a viewer actually wants to know about an app on the couch: when they last used it. */
+    fun lastOpened(app: TvApp): String = relativeDay(prefs.getLong(KEY_OPENED + app.packageName, 0L))
 
     private fun relativeDay(millis: Long): String {
         if (millis == 0L) return "Not yet"
@@ -110,11 +98,6 @@ class AppRepository(private val context: Context) {
         return startSafely(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).also { ok ->
             if (ok) prefs.edit().putString(KEY_LAST, app.packageName).putLong(KEY_OPENED + app.packageName, System.currentTimeMillis()).apply()
         }
-    }
-
-    fun launchPackage(pkg: String): Boolean {
-        val intent = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg) ?: return false
-        return startSafely(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     /** Opens a system screen; on TVs that lack it, falls back to the main Settings app. */

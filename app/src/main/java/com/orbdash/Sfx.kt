@@ -20,16 +20,31 @@ class Sfx(private val enabled: () -> Boolean, private val humEnabled: () -> Bool
     @Volatile private var bank: Bank? = null
     @Volatile private var humWanted = false
     @Volatile private var bootWanted = false
+    @Volatile private var released = false
+    // Restarting an AudioTrack can block for tens of ms on TV audio stacks, so it never runs on the
+    // UI thread: a key press just queues the sound.
+    private val player = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "sfx-play").apply { isDaemon = true } }
 
     init {
         thread(name = "sfx-render", isDaemon = true) {
-            bank = Bank()
+            val rendered = Bank()
+            synchronized(this) {
+                if (released) { rendered.releaseAll(); return@thread }
+                bank = rendered
+            }
             if (bootWanted) boot() // the intro asks for this before rendering is done
             if (humWanted) startHum()
         }
     }
 
+    /** Frees the audio tracks and the playback thread; call when the activity is destroyed. */
+    fun release() {
+        synchronized(this) { released = true; bank?.releaseAll(); bank = null }
+        player.shutdownNow()
+    }
+
     private inner class Bank {
+        fun releaseAll() = listOf(move, select, back, boot, hum).forEach { runCatching { it?.release() } }
 
         // Short glassy tick when the highlight moves.
         val move = render(0.07) { t -> tone(t, 1760.0, 2640.0) * env(t, 0.004, 28.0) * 0.22 }
@@ -95,12 +110,8 @@ class Sfx(private val enabled: () -> Boolean, private val humEnabled: () -> Bool
         runCatching { bank?.hum?.pause() }
     }
 
-    // Restarting an AudioTrack can block for tens of ms on TV audio stacks, so it never runs on the
-    // UI thread: a key press just queues the sound.
-    private val player = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "sfx-play").apply { isDaemon = true } }
-
     private fun play(track: AudioTrack?) {
-        if (track == null || !enabled()) return
+        if (track == null || !enabled() || released) return
         player.execute {
             runCatching {
                 track.stop()
