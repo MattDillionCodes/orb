@@ -22,6 +22,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -37,12 +38,15 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-data class MenuItem(val label: String, val sub: String?, val blurb: String, val icon: Ico)
+/** One pod on the home list: a menu entry, or an app ([thumb] is then its icon). */
+data class MenuItem(val label: String, val sub: String?, val blurb: String, val icon: Ico, val thumb: androidx.compose.ui.graphics.ImageBitmap? = null)
 
-private val PodWidth = 300.dp
-private val PodHeight = 54.dp
-/** Vertical band the pod column must stay inside: below the status row, above the info panel. */
-private const val BAND_DP = 370f
+private val PodWidth = 320.dp
+private val PodHeight = 52.dp
+private const val SPACING_DP = 62f
+/** Pods this many slots from the focused one are fully visible; they're gone by +0.5 more, which keeps
+ *  the wheel clear of the clock above and the info panel below. */
+private const val VISIBLE_SLOTS = 1.9f
 
 /**
  * Home: the orb sits in the left third; menu pods hang off it on an arc to the right,
@@ -51,13 +55,10 @@ private const val BAND_DP = 370f
  */
 @Composable
 fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Float, camera: Offset) {
-    // More pods pack tighter; whatever room is left over is how far the column may glide
-    // to bring the focused pod towards the orb's eye line.
-    val gaps = (items.size - 1).coerceAtLeast(1)
-    val spacing = minOf(70f, (BAND_DP - PodHeight.value - 6f) / gaps)
-    val slack = BAND_DP - (gaps * spacing + PodHeight.value)
-    val glideRate = (slack / (gaps * spacing)).coerceIn(0f, 0.22f)
-    val glide by animateFloatAsState(-(index - (items.size - 1) / 2f) * glideRate, tween(320), label = "glide")
+    // The list scrolls like a wheel: the focused pod always sits level with the orb's centre,
+    // so a TV with forty apps works the same as one with four.
+    val pos by animateFloatAsState(index.toFloat(), tween(260), label = "wheel")
+    fun fade(i: Int) = 1f - ((abs(i - pos) - VISIBLE_SLOTS) / 0.5f).coerceIn(0f, 1f)
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = maxWidth
         val h = maxHeight
@@ -69,7 +70,7 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
 
         // Pod anchor points (left-centre of each pill) on a circle around the orb.
         val pods = items.indices.map { i ->
-            val dy = (spacing * (i - (items.size - 1) / 2f + glide)).dp
+            val dy = (SPACING_DP * (i - pos)).dp
             val dx = sqrt((arcR.value * arcR.value - dy.value * dy.value).coerceAtLeast(0f)).dp
             Pair(ox + dx, oy + dy)
         }
@@ -79,6 +80,7 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
             val t = clock.value
             val o = Offset(ox.toPx(), oy.toPx())
             pods.forEachIndexed { i, (px, py) ->
+                if (fade(i) <= 0f) return@forEachIndexed
                 val end = Offset(px.toPx() + 4f, py.toPx())
                 val a = atan2(end.y - o.y, end.x - o.x)
                 val start = Offset(o.x + cos(a) * orbR.toPx() * 0.9f, o.y + sin(a) * orbR.toPx() * 0.9f)
@@ -88,11 +90,12 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                     cubicTo(start.x + (end.x - start.x) * 0.55f, start.y + sway, end.x - (end.x - start.x) * 0.45f, end.y - sway, end.x, end.y)
                 }
                 val sel = i == index
+                val f = fade(i)
                 val width = if (sel) 18f else 12f
                 // Shaded tube: dark body, mid tone, then a highlight offset upwards like a lit cylinder.
-                drawPath(path, Color.Black.copy(alpha = 0.5f), style = Stroke(width + 6f, cap = StrokeCap.Round))
-                drawPath(path, Dash.Moss, style = Stroke(width, cap = StrokeCap.Round))
-                drawPath(path, (if (sel) Dash.Lime else Dash.Green).copy(alpha = if (sel) 0.9f else 0.5f), style = Stroke(width * 0.45f, cap = StrokeCap.Round))
+                drawPath(path, Color.Black.copy(alpha = 0.5f * f), style = Stroke(width + 6f, cap = StrokeCap.Round))
+                drawPath(path, Dash.Moss.copy(alpha = f), style = Stroke(width, cap = StrokeCap.Round))
+                drawPath(path, (if (sel) Dash.Lime else Dash.Green).copy(alpha = (if (sel) 0.9f else 0.5f) * f), style = Stroke(width * 0.45f, cap = StrokeCap.Round))
                 val pm = PathMeasure().apply { setPath(path, false) }
                 // Ribs every few pixels make the tube read as organic tubing rather than a line.
                 var d = 14f
@@ -100,35 +103,43 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                     val p = pm.getPosition(d)
                     val tan = pm.getTangent(d)
                     val n = Offset(-tan.y, tan.x) * (width * 0.5f)
-                    drawLine(Color.Black.copy(alpha = 0.35f), p - n, p + n, 1.5f)
+                    drawLine(Color.Black.copy(alpha = 0.35f * f), p - n, p + n, 1.5f)
                     d += 16f
                 }
-                drawPath(path, Color.White.copy(alpha = if (sel) 0.55f else 0.18f), style = Stroke(1.5f, cap = StrokeCap.Round))
+                drawPath(path, Color.White.copy(alpha = (if (sel) 0.55f else 0.18f) * f), style = Stroke(1.5f, cap = StrokeCap.Round))
                 if (sel) {
                     // A bead of light travelling from the orb out to the focused pod.
                     val pos = pm.getPosition(pm.length * ((t * 0.9f) % 1f))
                     drawCircle(Brush.radialGradient(listOf(Color.White, Dash.Glow.copy(alpha = 0f)), pos, 18f), 18f, pos)
                 }
                 // Socket collar where the tube plugs into the pod.
-                drawCircle(Dash.Deep, width * 0.9f, end)
-                drawCircle((if (sel) Dash.Glow else Dash.PanelEdge), width * 0.9f, end, style = Stroke(2.5f))
+                drawCircle(Dash.Deep.copy(alpha = f), width * 0.9f, end)
+                drawCircle((if (sel) Dash.Glow else Dash.PanelEdge).copy(alpha = f), width * 0.9f, end, style = Stroke(2.5f))
             }
         }
 
         Orb(clock, energy, Modifier.size(orbSize).offset(ox - orbSize / 2, oy - orbSize / 2))
 
         items.forEachIndexed { i, item ->
+            val f = fade(i)
+            if (f <= 0f) return@forEachIndexed
             val (px, py) = pods[i]
             JellyPill(
                 text = item.label,
                 sub = item.sub,
                 selected = i == index,
                 height = PodHeight,
-                icon = item.icon,
+                icon = item.icon.takeIf { item.thumb == null },
+                thumb = item.thumb,
                 depth = (abs(i - index) / 3f).coerceAtMost(1f),
-                modifier = Modifier.offset(px, py - PodHeight / 2).width(PodWidth).height(PodHeight),
+                modifier = Modifier.offset(px, py - PodHeight / 2).width(PodWidth).height(PodHeight).alpha(f),
             )
         }
+
+        // "More this way" arrows above and below the wheel.
+        val arrowX = ox + arcR + PodWidth / 2 - 60.dp
+        if (index > 1) MoreArrow(up = true, Modifier.offset(arrowX, oy - (SPACING_DP * (VISIBLE_SLOTS + 0.75f)).dp))
+        if (items.size - 1 - index > 1) MoreArrow(up = false, Modifier.offset(arrowX, oy + (SPACING_DP * (VISIBLE_SLOTS + 0.55f)).dp))
 
         StatusCluster(Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = 48.dp))
 
@@ -145,14 +156,27 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconView(it.icon, Modifier.size(34.dp), Dash.Glow)
+                val thumb = it.thumb
+                if (thumb != null) androidx.compose.foundation.Image(thumb, null, Modifier.size(38.dp)) else IconView(it.icon, Modifier.size(34.dp), Dash.Glow)
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    BasicText(it.label, style = dashText(15.sp, Dash.Glow, bold = true, spacing = 3.sp))
+                    BasicText("${it.label.uppercase()}   ·   ${index + 1} OF ${items.size}", style = dashText(15.sp, Dash.Glow, bold = true, spacing = 3.sp), maxLines = 1)
                     BasicText(it.blurb, style = dashText(18.sp, Dash.Text), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
             }
         }
         Legend(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 30.dp), okLabel = "OPEN", backLabel = null)
+    }
+}
+
+@Composable
+private fun MoreArrow(up: Boolean, modifier: Modifier) {
+    Canvas(modifier.size(width = 40.dp, height = 16.dp)) {
+        val y0 = if (up) size.height else 0f
+        val y1 = if (up) 0f else size.height
+        drawPath(
+            Path().apply { moveTo(0f, y0); lineTo(size.width / 2, y1); lineTo(size.width, y0); close() },
+            Dash.Glow.copy(alpha = 0.8f),
+        )
     }
 }

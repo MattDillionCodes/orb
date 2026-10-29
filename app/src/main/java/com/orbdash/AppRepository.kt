@@ -98,6 +98,11 @@ class AppRepository(private val context: Context) {
         )
     }
 
+    /** The TV's own Settings app. Home already has a Settings pod (with "All TV settings"), so it's hidden from the app list. */
+    val systemSettingsPackage: String? by lazy {
+        pm.resolveActivity(Intent(android.provider.Settings.ACTION_SETTINGS), 0)?.activityInfo?.packageName
+    }
+
     fun launch(app: TvApp): Boolean {
         val intent = (if (app.isTvApp) pm.getLeanbackLaunchIntentForPackage(app.packageName) else null)
             ?: pm.getLaunchIntentForPackage(app.packageName)

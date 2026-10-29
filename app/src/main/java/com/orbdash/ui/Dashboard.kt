@@ -48,9 +48,10 @@ private sealed interface Screen {
     data class Section(val id: String) : Screen
 }
 
-private const val ALL = "all"
 private const val SETTINGS = "settings"
 private const val RESUME = "resume"
+/** Home ids for app pods are "app:" + package name. */
+private const val APP = "app:"
 
 @Composable
 fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo: AppRepository, sfx: Sfx, playBoot: Boolean) {
@@ -70,36 +71,33 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val energy = remember { Animatable(0f) }
     val focus = remember { FocusRequester() }
 
-    val buckets = remember(apps) { apps.groupBy { categorize(it) } }
     val resumeApp = apps.firstOrNull { it.packageName == lastUsedPackage }
+    val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
 
-    // Home pods. "Resume" takes the old disc slot at the top and only shows when there's something to resume.
-    // Category pods only appear when they have apps in them: on a TV, an empty menu is a wasted trip.
+    // The home list: Resume (the old disc slot) when there's something to resume,
+    // then every app as its own pod, A to Z, then Settings at the end.
     val homeIds = buildList {
         if (resumeApp != null) add(RESUME)
-        for (c in listOf(Category.WATCH, Category.MUSIC, Category.GAMES)) if (!buckets[c].isNullOrEmpty()) add(c.name)
-        add(ALL); add(SETTINGS)
+        apps.forEach { if (it.packageName != repo.systemSettingsPackage) add(APP + it.packageName) }
+        add(SETTINGS)
     }
-    fun count(c: Category) = buckets[c]?.size ?: 0
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
     val homeItems = homeIds.map { id ->
-        when (id) {
-            RESUME -> MenuItem("RESUME", resumeApp!!.label, "Pick up where you left off in ${resumeApp.label}.", Ico.RESUME)
-            Category.WATCH.name -> MenuItem("WATCH", plural(count(Category.WATCH)), "Your video apps: shows, movies and YouTube.", Ico.PLAY)
-            Category.MUSIC.name -> MenuItem("MUSIC", plural(count(Category.MUSIC)), "Your music, radio and podcast apps.", Ico.NOTE)
-            Category.GAMES.name -> MenuItem("GAMES", plural(count(Category.GAMES)), "Your games and game-streaming apps.", Ico.PAD)
-            ALL -> MenuItem("ALL APPS", plural(apps.size), "Every app on this TV, A to Z.", Ico.GRID)
+        val app = appsByPackage[id.removePrefix(APP)]
+        when {
+            id == RESUME -> MenuItem("RESUME", resumeApp!!.label, "Pick up where you left off in ${resumeApp.label}.", Ico.RESUME)
+            app != null -> MenuItem(
+                label = app.label,
+                // categorize() labels each app (WATCH / MUSIC / GAMES); plain apps get no label.
+                sub = categorize(app).takeIf { it != Category.OTHER }?.name,
+                blurb = "Press OK to open ${app.label}. Last opened: ${repo.details(app).first().second.lowercase()}.",
+                icon = Ico.GRID,
+                thumb = app.icon,
+            )
             else -> MenuItem("SETTINGS", null, "Wi-Fi, picture, sound and dashboard options.", Ico.GEAR)
         }
     }
     homeIndex = homeIndex.coerceIn(0, homeItems.lastIndex)
-
-    fun appEntries(list: List<TvApp>, emptyHint: String): List<Entry> =
-        list.map { a ->
-            Entry(a.label, "Press OK to open ${a.label}.", a.art, a.artIsBanner, thumb = a.icon, kind = "APP", readouts = { repo.details(a) }) { repo.launch(a) }
-        }.ifEmpty {
-            listOf(Entry("Get apps", "$emptyHint Press OK to open Google Play.", icon = Ico.STORE, kind = "GOOGLE PLAY") { repo.launchPackage("com.android.vending") })
-        }
 
     fun onOff(b: Boolean) = if (b) "ON" else "OFF"
     fun settingsEntries(): List<Entry> {
@@ -143,20 +141,9 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     }
 
     val section = screen as? Screen.Section
-    val entries: List<Entry> = when (section?.id) {
-        null -> emptyList()
-        SETTINGS -> settingsEntries()
-        ALL -> appEntries(apps, "No apps installed yet.")
-        Category.WATCH.name -> appEntries(buckets[Category.WATCH].orEmpty(), "No video apps found.")
-        Category.MUSIC.name -> appEntries(buckets[Category.MUSIC].orEmpty(), "No music apps found.")
-        else -> appEntries(buckets[Category.GAMES].orEmpty(), "No games found.")
-    }
+    val entries: List<Entry> = if (section?.id == SETTINGS) settingsEntries() else emptyList()
     listIndex = listIndex.coerceIn(0, (entries.size - 1).coerceAtLeast(0))
-    val subtitle = when (section?.id) {
-        null -> null
-        SETTINGS -> "TV and dashboard options"
-        else -> if (entries.firstOrNull()?.kind == "APP") "${plural(entries.size)} · A to Z" else "Nothing here yet"
-    }
+    val subtitle = if (section != null) "TV and dashboard options" else null
 
     fun flare() = scope.launch { energy.snapTo(1f); energy.animateTo(0f, tween(700)) }
 
@@ -169,9 +156,13 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
         val action = if (screen is Screen.Section) entries.getOrNull(listIndex)?.action ?: return else null
         sfx.select(); flare()
         when (screen) {
-            Screen.Home -> when (val id = homeIds[homeIndex]) {
-                RESUME -> resumeApp?.let { repo.launch(it) }
-                else -> { listIndex = lastIndexIn[id] ?: 0; screen = Screen.Section(id) }
+            Screen.Home -> {
+                val id = homeIds[homeIndex]
+                when {
+                    id == RESUME -> resumeApp?.let { repo.launch(it) }
+                    id.startsWith(APP) -> appsByPackage[id.removePrefix(APP)]?.let { repo.launch(it) }
+                    else -> { listIndex = lastIndexIn[id] ?: 0; screen = Screen.Section(id) }
+                }
             }
             is Screen.Section -> action?.invoke()
         }
@@ -199,7 +190,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     // and every selection change tilts the view slightly so the layers parallax against each other.
     val home = screen == Screen.Home
     val veinFocus by animateOffsetAsState(if (home) Offset(0.29f, 0.5f) else Offset(0.97f, 0.12f), tween(450), label = "veins")
-    val tilt = if (home) (homeIndex - (homeItems.size - 1) / 2f) else (listIndex.coerceAtMost(8) - 4f) * 0.5f
+    val tilt = if (home) (homeIndex - (homeItems.size - 1) / 2f).coerceIn(-3f, 3f) else (listIndex.coerceAtMost(8) - 4f) * 0.5f
     val camera by animateOffsetAsState(Offset(-0.004f * tilt, -0.012f * tilt), tween(600), label = "camera")
     val tunnel by animateFloatAsState(if (home) 0.3f else 1f, tween(500), label = "tunnel")
 
