@@ -46,7 +46,7 @@ echo "Using $SERIAL ($AVD)"
 
 # 3. Build, install, and make OrbDash the Home app on this emulator only.
 "$ROOT/gradlew" -p "$ROOT" :app:assembleDebug -q
-"$ADB" -s "$SERIAL" install -r "$ROOT/app/build/outputs/apk/debug/app-debug.apk" >/dev/null
+"$ADB" -s "$SERIAL" install -r "$ROOT/app/build.nosync/outputs/apk/debug/app-debug.apk" >/dev/null
 "$ADB" -s "$SERIAL" shell cmd package set-home-activity com.orbdash/.MainActivity >/dev/null
 # The stock TV launcher always wins the Home button, so switch it off here (undo: pm enable).
 "$ADB" -s "$SERIAL" shell pm disable-user --user 0 com.google.android.tvlauncher >/dev/null 2>&1 || true

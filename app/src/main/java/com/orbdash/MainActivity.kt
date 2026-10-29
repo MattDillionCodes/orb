@@ -25,16 +25,20 @@ class MainActivity : ComponentActivity() {
                 homeTicks = homeTicks.value,
                 repo = repo,
                 sfx = sfx,
-                playBoot = savedInstanceState == null,
+                playBoot = savedInstanceState == null && repo.shouldPlayIntro(),
             )
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // Apps may have been installed/removed while we were in the background.
-        apps.value = repo.loadApps()
+        // Apps may have been installed/removed while we were in the background. Drawing every
+        // banner into a bitmap is slow, so do it off the main thread and swap the list in after.
         lastUsed.value = repo.lastUsedPackage()
+        kotlin.concurrent.thread(name = "load-apps") {
+            val loaded = repo.loadApps()
+            runOnUiThread { apps.value = loaded }
+        }
         sfx.startHum()
     }
 

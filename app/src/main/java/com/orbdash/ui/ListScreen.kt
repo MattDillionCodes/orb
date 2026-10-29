@@ -62,7 +62,12 @@ data class Entry(
     val kind: String = "",
     /** Key/value lines for the detail panel, computed only when this row is focused. */
     val readouts: () -> List<Pair<String, String>> = { emptyList() },
-    val action: () -> Unit,
+    /** Heading shown above the first row of each group, e.g. "TV" and "DASHBOARD" in Settings. */
+    val group: String = "",
+    /** What the OK hint says on this row: OPEN, CHANGE, ... */
+    val okLabel: String = "OPEN",
+    /** null = nothing happens on OK (info-only rows), and the OK hint is hidden. */
+    val action: (() -> Unit)? = null,
 )
 
 private const val VISIBLE_ROWS = 6
@@ -80,7 +85,7 @@ fun ListScreen(title: String, subtitle: String?, entries: List<Entry>, index: In
         Header(title, subtitle, Modifier.padding(start = 48.dp, top = 28.dp))
         StatusCluster(Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = 48.dp))
 
-        ScrollTrack(index, entries.size, Modifier.offset(x = 30.dp, y = 140.dp).width(12.dp).height(300.dp))
+        ScrollTrack(index, entries.size, Modifier.offset(x = 30.dp, y = 154.dp).width(12.dp).height(290.dp))
 
         LazyColumn(
             state = listState,
@@ -88,17 +93,23 @@ fun ListScreen(title: String, subtitle: String?, entries: List<Entry>, index: In
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 18.dp, horizontal = 20.dp),
             modifier = Modifier
-                .offset(x = 44.dp, y = 122.dp)
+                .offset(x = 44.dp, y = 138.dp)
                 .width(420.dp)
-                .height(340.dp)
+                .height(326.dp)
                 // Rows dissolve at the top and bottom edges instead of being sliced off.
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                 .drawWithContent {
                     drawContent()
-                    drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.07f to Color.Black, 0.9f to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+                    drawRect(Brush.verticalGradient(0f to Color.Transparent, 0.1f to Color.Black, 0.9f to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
                 },
         ) {
             itemsIndexed(entries) { i, e ->
+                if (e.group.isNotEmpty() && e.group != entries.getOrNull(i - 1)?.group) {
+                    BasicText(
+                        e.group, style = dashText(16.sp, Dash.Glow, bold = true, spacing = 4.sp),
+                        modifier = Modifier.padding(start = 12.dp, top = if (i == 0) 0.dp else 10.dp, bottom = 8.dp),
+                    )
+                }
                 JellyPill(
                     e.title, i == index, Modifier.fillMaxWidth().height(48.dp),
                     height = 48.dp, textSize = 21.sp, sub = e.value, icon = e.icon, thumb = e.thumb,
@@ -110,7 +121,8 @@ fun ListScreen(title: String, subtitle: String?, entries: List<Entry>, index: In
             DetailPanel(e, index, entries.size, clock, Modifier.offset(x = 500.dp, y = 110.dp).width(412.dp))
         }
 
-        Legend(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 30.dp))
+        val focused = entries.getOrNull(index)
+        Legend(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 30.dp), okLabel = focused?.takeIf { it.action != null }?.okLabel)
     }
 }
 
@@ -145,7 +157,7 @@ private fun DetailPanel(e: Entry, index: Int, count: Int, clock: State<Float>, m
                     .padding(start = 18.dp)
                     .background(Dash.PanelEdge, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
                     .padding(horizontal = 12.dp, vertical = 2.dp),
-            ) { BasicText(e.kind, style = dashText(12.sp, Dash.Deep, bold = true, spacing = 3.sp)) }
+            ) { BasicText(e.kind, style = dashText(14.sp, Dash.Deep, bold = true, spacing = 3.sp)) }
         }
         Column(
             Modifier
@@ -156,17 +168,17 @@ private fun DetailPanel(e: Entry, index: Int, count: Int, clock: State<Float>, m
         ) {
             ArtWindow(e, clock)
             BasicText(e.title, style = dashText(26.sp, Dash.Core, bold = true), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
-            BasicText(e.detail, style = dashText(16.sp, Dash.Text), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+            BasicText(e.detail, style = dashText(18.sp, Dash.Text), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
             if (readouts.isNotEmpty()) {
                 Box(Modifier.padding(vertical = 10.dp).fillMaxWidth().height(1.dp).background(Brush.horizontalGradient(listOf(Dash.PanelEdge, Color.Transparent))))
                 for ((k, v) in readouts.take(4)) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-                        BasicText(k, style = dashText(13.sp, Dash.TextDim, bold = true, spacing = 2.sp), modifier = Modifier.width(118.dp))
-                        BasicText(v, style = dashText(15.sp, Dash.Text, bold = true), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        BasicText(k, style = dashText(15.sp, Dash.TextDim, bold = true, spacing = 2.sp), modifier = Modifier.width(140.dp))
+                        BasicText(v, style = dashText(17.sp, Dash.Text, bold = true), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
-            BasicText("${index + 1} / $count", style = dashText(13.sp, Dash.TextDim, spacing = 2.sp), modifier = Modifier.align(Alignment.End).padding(top = 6.dp))
+            BasicText("${index + 1} OF $count", style = dashText(15.sp, Dash.TextDim, spacing = 2.sp), modifier = Modifier.align(Alignment.End).padding(top = 6.dp))
         }
     }
 }

@@ -12,7 +12,6 @@ import android.os.Environment
 import android.os.StatFs
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
@@ -62,27 +61,40 @@ class AppRepository(private val context: Context) {
         return byPackage.values.sortedBy { it.label.lowercase() }
     }
 
-    /** Readout lines for the detail panel. Cheap enough to compute when a row gains focus. */
-    fun details(app: TvApp): List<Pair<String, String>> = runCatching {
-        val pi = pm.getPackageInfo(app.packageName, 0)
-        val ai = pi.applicationInfo
-        val bytes = listOfNotNull(ai?.sourceDir).plus(ai?.splitSourceDirs.orEmpty()).sumOf { File(it).length() }
-        listOf(
-            "VERSION" to (pi.versionName ?: "—"),
-            "UPDATED" to DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(pi.lastUpdateTime)),
-            "SIZE" to if (bytes > 0) "%.0f MB".format(bytes / 1_000_000.0) else "—",
-            "TYPE" to if (app.isTvApp) "Made for TV" else "Phone app",
-        )
-    }.getOrDefault(emptyList())
+    /**
+     * What a viewer actually wants to know about an app on the couch: when they last used it.
+     * (Version numbers and install sizes are developer details, so they're left out.)
+     */
+    fun details(app: TvApp): List<Pair<String, String>> = listOf(
+        "LAST OPENED" to relativeDay(prefs.getLong(KEY_OPENED + app.packageName, 0L)),
+        "MADE FOR" to if (app.isTvApp) "TV remote" else "Phone (may need a mouse)",
+    )
+
+    private fun relativeDay(millis: Long): String {
+        if (millis == 0L) return "Not yet"
+        val days = ((System.currentTimeMillis() - millis) / 86_400_000L).toInt()
+        return when (days) {
+            0 -> "Today"
+            1 -> "Yesterday"
+            in 2..13 -> "$days days ago"
+            else -> DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(millis))
+        }
+    }
+
+    /** The intro plays once each time the TV powers on, not every time Android restarts the launcher. */
+    fun shouldPlayIntro(): Boolean {
+        val boot = android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.BOOT_COUNT, -1)
+        if (boot != -1 && prefs.getInt(KEY_INTRO_BOOT, -2) == boot) return false
+        prefs.edit().putInt(KEY_INTRO_BOOT, boot).apply()
+        return true
+    }
 
     fun systemInfo(appCount: Int): List<Pair<String, String>> {
         val stat = StatFs(Environment.getDataDirectory().path)
-        val dm = context.resources.displayMetrics
         return listOf(
             "DEVICE" to "${Build.MANUFACTURER} ${Build.MODEL}",
             "ANDROID" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
-            "STORAGE" to "%.1f GB free of %.1f GB".format(stat.availableBytes / 1e9, stat.totalBytes / 1e9),
-            "SCREEN" to "${dm.widthPixels} × ${dm.heightPixels} · $appCount apps",
+            "FREE SPACE" to "%.1f GB of %.1f GB · $appCount apps".format(stat.availableBytes / 1e9, stat.totalBytes / 1e9),
         )
     }
 
@@ -91,7 +103,7 @@ class AppRepository(private val context: Context) {
             ?: pm.getLaunchIntentForPackage(app.packageName)
             ?: Intent(Intent.ACTION_MAIN).setComponent(app.component)
         return startSafely(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)).also { ok ->
-            if (ok) prefs.edit().putString(KEY_LAST, app.packageName).apply()
+            if (ok) prefs.edit().putString(KEY_LAST, app.packageName).putLong(KEY_OPENED + app.packageName, System.currentTimeMillis()).apply()
         }
     }
 
@@ -112,7 +124,7 @@ class AppRepository(private val context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_SOUNDS, value).apply()
 
     var humOn: Boolean
-        get() = prefs.getBoolean(KEY_HUM, true)
+        get() = prefs.getBoolean(KEY_HUM, false) // off by default: a humming TV is confusing
         set(value) = prefs.edit().putBoolean(KEY_HUM, value).apply()
 
     var wallpaperId: String
@@ -137,5 +149,7 @@ class AppRepository(private val context: Context) {
         const val KEY_SOUNDS = "sounds_on"
         const val KEY_HUM = "hum_on"
         const val KEY_WALLPAPER = "wallpaper"
+        const val KEY_OPENED = "opened_"
+        const val KEY_INTRO_BOOT = "intro_boot"
     }
 }

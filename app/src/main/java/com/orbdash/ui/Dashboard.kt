@@ -61,6 +61,8 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var homeIndex by remember { mutableIntStateOf(0) }
     var listIndex by remember { mutableIntStateOf(0) }
+    // Where you were in each list, so coming back to Watch lands on the app you left from.
+    val lastIndexIn = remember { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
     var soundsOn by remember { mutableStateOf(repo.soundsOn) }
     var humOn by remember { mutableStateOf(repo.humOn) }
     var wallpaper by remember { mutableStateOf(WALLPAPERS.firstOrNull { it.id == repo.wallpaperId } ?: WALLPAPERS[0]) }
@@ -72,65 +74,73 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val resumeApp = apps.firstOrNull { it.packageName == lastUsedPackage }
 
     // Home pods. "Resume" takes the old disc slot at the top and only shows when there's something to resume.
+    // Category pods only appear when they have apps in them: on a TV, an empty menu is a wasted trip.
     val homeIds = buildList {
         if (resumeApp != null) add(RESUME)
-        add(Category.WATCH.name); add(Category.MUSIC.name)
-        if (!buckets[Category.GAMES].isNullOrEmpty()) add(Category.GAMES.name)
+        for (c in listOf(Category.WATCH, Category.MUSIC, Category.GAMES)) if (!buckets[c].isNullOrEmpty()) add(c.name)
         add(ALL); add(SETTINGS)
     }
     fun count(c: Category) = buckets[c]?.size ?: 0
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
     val homeItems = homeIds.map { id ->
         when (id) {
-            RESUME -> MenuItem("RESUME", resumeApp!!.label, "Jump straight back into ${resumeApp.label}.", Ico.RESUME)
-            Category.WATCH.name -> MenuItem("WATCH", plural(count(Category.WATCH)), "Movies, shows and video apps like YouTube and Netflix.", Ico.PLAY)
-            Category.MUSIC.name -> MenuItem("MUSIC", plural(count(Category.MUSIC)), "Music, radio and podcast apps.", Ico.NOTE)
-            Category.GAMES.name -> MenuItem("GAMES", plural(count(Category.GAMES)), "Games and game-streaming apps.", Ico.PAD)
-            ALL -> MenuItem("ALL APPS", plural(apps.size), "Everything installed on this TV, A to Z.", Ico.GRID)
-            else -> MenuItem("SETTINGS", null, "Wi-Fi, picture, sound, wallpaper and system info.", Ico.GEAR)
+            RESUME -> MenuItem("RESUME", resumeApp!!.label, "Pick up where you left off in ${resumeApp.label}.", Ico.RESUME)
+            Category.WATCH.name -> MenuItem("WATCH", plural(count(Category.WATCH)), "Your video apps: shows, movies and YouTube.", Ico.PLAY)
+            Category.MUSIC.name -> MenuItem("MUSIC", plural(count(Category.MUSIC)), "Your music, radio and podcast apps.", Ico.NOTE)
+            Category.GAMES.name -> MenuItem("GAMES", plural(count(Category.GAMES)), "Your games and game-streaming apps.", Ico.PAD)
+            ALL -> MenuItem("ALL APPS", plural(apps.size), "Every app on this TV, A to Z.", Ico.GRID)
+            else -> MenuItem("SETTINGS", null, "Wi-Fi, picture, sound and dashboard options.", Ico.GEAR)
         }
     }
     homeIndex = homeIndex.coerceIn(0, homeItems.lastIndex)
 
     fun appEntries(list: List<TvApp>, emptyHint: String): List<Entry> =
         list.map { a ->
-            Entry(a.label, "Press OK to open ${a.label}.", a.art, a.artIsBanner, thumb = a.icon, kind = "APP INFO", readouts = { repo.details(a) }) { repo.launch(a) }
+            Entry(a.label, "Press OK to open ${a.label}.", a.art, a.artIsBanner, thumb = a.icon, kind = "APP", readouts = { repo.details(a) }) { repo.launch(a) }
         }.ifEmpty {
             listOf(Entry("Get apps", "$emptyHint Press OK to open Google Play.", icon = Ico.STORE, kind = "GOOGLE PLAY") { repo.launchPackage("com.android.vending") })
         }
 
     fun onOff(b: Boolean) = if (b) "ON" else "OFF"
-    fun settingsEntries(): List<Entry> = listOf(
-        Entry(
-            "Wallpaper", "Press OK to cycle backdrops. Living is the animated one.",
-            art = wallpaperImage, artIsBanner = true, icon = Ico.DISPLAY, value = wallpaper.name.uppercase(), kind = "DASHBOARD",
-            readouts = { listOf("CURRENT" to wallpaper.name, "CHOICES" to "${WALLPAPERS.size} backdrops") },
-        ) {
-            wallpaper = WALLPAPERS[(WALLPAPERS.indexOf(wallpaper) + 1) % WALLPAPERS.size]
-            repo.wallpaperId = wallpaper.id
-        },
-        Entry("Sound effects", "The little chimes when you move and select.", icon = Ico.NOTE, value = onOff(soundsOn), kind = "DASHBOARD") {
-            soundsOn = !soundsOn; repo.soundsOn = soundsOn
-        },
-        Entry("Ambient hum", "A low background drone while the dashboard is open. Stops when an app starts.", icon = Ico.WAVE, value = onOff(humOn), kind = "DASHBOARD") {
-            humOn = !humOn; repo.humOn = humOn
-            if (humOn) sfx.startHum() else sfx.stopHum()
-        },
-        Entry("Wi-Fi & network", "Connect to Wi-Fi or Ethernet.", icon = Ico.WIFI, kind = "TV SETTING", readouts = { listOf("STATUS" to networkLabel(context)) }) {
-            repo.openSystem(Settings.ACTION_WIFI_SETTINGS)
-        },
-        Entry("Picture & display", "Resolution, picture mode and screen settings.", icon = Ico.DISPLAY, kind = "TV SETTING") { repo.openSystem(Settings.ACTION_DISPLAY_SETTINGS) },
-        Entry("Sound", "TV speakers, sound output and volume options.", icon = Ico.SPEAKER, kind = "TV SETTING") { repo.openSystem(Settings.ACTION_SOUND_SETTINGS) },
-        Entry(
-            "Date & time", "Set the clock shown on this dashboard.", icon = Ico.CLOCK, kind = "TV SETTING",
-            readouts = { listOf("NOW" to SimpleDateFormat("EEE d MMM, h:mm a", Locale.getDefault()).format(Date())) },
-        ) { repo.openSystem(Settings.ACTION_DATE_SETTINGS) },
-        Entry("Manage apps", "Uninstall apps, clear storage, permissions.", icon = Ico.GRID, kind = "TV SETTING", readouts = { listOf("INSTALLED" to plural(apps.size)) }) {
-            repo.openSystem(Settings.ACTION_APPLICATION_SETTINGS)
-        },
-        Entry("All TV settings", "The full Google TV settings menu.", icon = Ico.GEAR, kind = "TV SETTING") { repo.openSystem(Settings.ACTION_SETTINGS) },
-        Entry("System info", "About this TV and dashboard.", icon = Ico.INFO, kind = "SYSTEM", readouts = { repo.systemInfo(apps.size) }) {},
-    )
+    fun settingsEntries(): List<Entry> {
+        val next = WALLPAPERS[(WALLPAPERS.indexOf(wallpaper) + 1) % WALLPAPERS.size]
+        val tv = "TV SETTINGS"
+        val dash = "DASHBOARD"
+        val opens = "Opens the TV's own settings."
+        return listOf(
+            // The things people actually come to Settings for, first.
+            Entry("Wi-Fi & network", "Connect to Wi-Fi or Ethernet. $opens", icon = Ico.WIFI, kind = "TV", group = tv, readouts = { listOf("STATUS" to networkLabel(context)) }) {
+                repo.openSystem(Settings.ACTION_WIFI_SETTINGS)
+            },
+            Entry("Picture", "Picture mode, brightness and resolution. $opens", icon = Ico.DISPLAY, kind = "TV", group = tv) { repo.openSystem(Settings.ACTION_DISPLAY_SETTINGS) },
+            Entry("Sound", "Speakers, sound output and volume. $opens", icon = Ico.SPEAKER, kind = "TV", group = tv) { repo.openSystem(Settings.ACTION_SOUND_SETTINGS) },
+            Entry(
+                "Date & time", "Set the clock shown on this screen. $opens", icon = Ico.CLOCK, kind = "TV", group = tv,
+                readouts = { listOf("NOW" to SimpleDateFormat("EEE d MMM, h:mm a", Locale.getDefault()).format(Date())) },
+            ) { repo.openSystem(Settings.ACTION_DATE_SETTINGS) },
+            Entry("Apps", "Uninstall apps or free up space. $opens", icon = Ico.GRID, kind = "TV", group = tv, readouts = { listOf("INSTALLED" to plural(apps.size)) }) {
+                repo.openSystem(Settings.ACTION_APPLICATION_SETTINGS)
+            },
+            Entry("All TV settings", "Everything else, in the TV's full settings menu.", icon = Ico.GEAR, kind = "TV", group = tv) { repo.openSystem(Settings.ACTION_SETTINGS) },
+            // Look and feel of this dashboard.
+            Entry(
+                "Wallpaper", "Now showing ${wallpaper.name}. Press OK to switch to ${next.name}.",
+                art = wallpaperImage, artIsBanner = true, icon = Ico.DISPLAY, value = wallpaper.name.uppercase(), kind = "DASHBOARD", group = dash, okLabel = "NEXT",
+            ) {
+                wallpaper = next
+                repo.wallpaperId = wallpaper.id
+            },
+            Entry("Sound effects", "Chimes when you move and select. Press OK to turn ${if (soundsOn) "off" else "on"}.", icon = Ico.NOTE, value = onOff(soundsOn), kind = "DASHBOARD", group = dash, okLabel = if (soundsOn) "TURN OFF" else "TURN ON") {
+                soundsOn = !soundsOn; repo.soundsOn = soundsOn
+            },
+            Entry("Background hum", "A soft drone while this screen is open. Stops when an app starts. Press OK to turn ${if (humOn) "off" else "on"}.", icon = Ico.WAVE, value = onOff(humOn), kind = "DASHBOARD", group = dash, okLabel = if (humOn) "TURN OFF" else "TURN ON") {
+                humOn = !humOn; repo.humOn = humOn
+                if (humOn) sfx.startHum() else sfx.stopHum()
+            },
+            // Read-only: no action, so the OK hint disappears instead of promising something.
+            Entry("About this TV", "Model, Android version and free space.", icon = Ico.INFO, kind = "INFO", group = dash, readouts = { repo.systemInfo(apps.size) }),
+        )
+    }
 
     val section = screen as? Screen.Section
     val entries: List<Entry> = when (section?.id) {
@@ -145,7 +155,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val subtitle = when (section?.id) {
         null -> null
         SETTINGS -> "TV and dashboard options"
-        else -> if (entries.firstOrNull()?.kind == "APP INFO") "${plural(entries.size)} · A to Z" else "Nothing here yet"
+        else -> if (entries.firstOrNull()?.kind == "APP") "${plural(entries.size)} · A to Z" else "Nothing here yet"
     }
 
     fun flare() = scope.launch { energy.snapTo(1f); energy.animateTo(0f, tween(700)) }
@@ -155,13 +165,15 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     }
 
     fun select() {
+        // Info-only rows ignore OK entirely: no chime, no flare, nothing that implies an action.
+        val action = if (screen is Screen.Section) entries.getOrNull(listIndex)?.action ?: return else null
         sfx.select(); flare()
         when (screen) {
             Screen.Home -> when (val id = homeIds[homeIndex]) {
                 RESUME -> resumeApp?.let { repo.launch(it) }
-                else -> { listIndex = 0; screen = Screen.Section(id) }
+                else -> { listIndex = lastIndexIn[id] ?: 0; screen = Screen.Section(id) }
             }
-            is Screen.Section -> entries.getOrNull(listIndex)?.action?.invoke()
+            is Screen.Section -> action?.invoke()
         }
     }
 
@@ -171,7 +183,10 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             if (next != homeIndex) { homeIndex = next; sfx.move() }
         } else {
             val next = (listIndex + delta).coerceIn(0, (entries.size - 1).coerceAtLeast(0))
-            if (next != listIndex) { listIndex = next; sfx.move() }
+            if (next != listIndex) {
+                listIndex = next; sfx.move()
+                (screen as? Screen.Section)?.let { lastIndexIn[it.id] = next }
+            }
         }
     }
 

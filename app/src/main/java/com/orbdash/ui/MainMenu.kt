@@ -138,7 +138,7 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                 Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 48.dp, bottom = 28.dp)
-                    .width(600.dp)
+                    .width(540.dp)
                     .bracketFrame(Dash.PanelEdge, len = 12.dp, gap = 4.dp)
                     .background(Brush.horizontalGradient(listOf(Color(0x99062206), Color(0x55062206))), RoundedCornerShape(6.dp))
                     .border(1.dp, Dash.PanelEdge.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
@@ -148,11 +148,11 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                 IconView(it.icon, Modifier.size(34.dp), Dash.Glow)
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    BasicText(it.label, style = dashText(13.sp, Dash.Glow, bold = true, spacing = 3.sp))
+                    BasicText(it.label, style = dashText(15.sp, Dash.Glow, bold = true, spacing = 3.sp))
                     BasicText(it.blurb, style = dashText(18.sp, Dash.Text), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 }
             }
         }
-        Legend(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 30.dp), backLabel = null)
+        Legend(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 30.dp), okLabel = "OPEN", backLabel = null)
     }
 }

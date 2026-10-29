@@ -1,7 +1,9 @@
 # Gradle / Android build output
 .gradle/
 build/
+build.nosync/
 app/build/
+app/build.nosync/
 .kotlin/
 local.properties
 *.apk

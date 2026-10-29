@@ -167,11 +167,40 @@ fun Glyph(symbol: String, color: Color, label: String) {
     }
 }
 
+/**
+ * Remote hints along the bottom: how to move, what OK will do *here*, and how to go back.
+ * Pass null for [okLabel] when OK does nothing on the focused item, so the hint never lies.
+ */
 @Composable
-fun Legend(modifier: Modifier = Modifier, backLabel: String? = "BACK") {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.CenterVertically) {
-        Glyph("OK", Dash.ButtonA, "SELECT")
+fun Legend(modifier: Modifier = Modifier, okLabel: String? = "SELECT", backLabel: String? = "BACK") {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
+        MoveGlyph()
+        if (okLabel != null) Glyph("OK", Dash.ButtonA, okLabel)
         if (backLabel != null) Glyph("◀", Dash.ButtonB, backLabel)
+    }
+}
+
+/** Neutral round glyph with up/down arrows: "use the D-pad to move". */
+@Composable
+private fun MoveGlyph() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.Canvas(
+            Modifier
+                .size(34.dp)
+                .background(Brush.radialGradient(listOf(Color(0xFF3C5A33), Color(0xFF16261A))), CircleShape)
+                .border(2.dp, Color.Black.copy(alpha = 0.5f), CircleShape),
+        ) {
+            val c = center; val s = size.minDimension
+            fun tri(dir: Float) = androidx.compose.ui.graphics.Path().apply {
+                moveTo(c.x, c.y + dir * s * 0.34f)
+                lineTo(c.x - s * 0.16f, c.y + dir * s * 0.1f)
+                lineTo(c.x + s * 0.16f, c.y + dir * s * 0.1f)
+                close()
+            }
+            drawPath(tri(-1f), Color.White)
+            drawPath(tri(1f), Color.White)
+        }
+        BasicText("MOVE", style = dashText(18.sp, Dash.Text, bold = true, spacing = 2.sp), modifier = Modifier.padding(start = 10.dp))
     }
 }
 
@@ -199,10 +228,10 @@ fun StatusCluster(modifier: Modifier = Modifier) {
     val online = net != "Offline"
     // One row, so the home pods can glide up underneath without colliding with it.
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        BasicText(date, style = dashText(13.sp, Dash.TextDim, bold = true, spacing = 2.sp))
+        BasicText(date, style = dashText(16.sp, Dash.TextDim, bold = true, spacing = 2.sp))
         Spacer(Modifier.width(12.dp))
         Box(Modifier.size(8.dp).background(if (online) Dash.Lime else Dash.ButtonB, CircleShape).border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape))
-        BasicText(" ${net.uppercase()}", style = dashText(13.sp, if (online) Dash.TextDim else Dash.ButtonB, bold = true, spacing = 2.sp))
+        BasicText(" ${net.uppercase()}", style = dashText(16.sp, if (online) Dash.TextDim else Dash.ButtonB, bold = true, spacing = 2.sp))
         Spacer(Modifier.width(18.dp))
         Box(Modifier.size(width = 1.dp, height = 26.dp).background(Dash.PanelEdge.copy(alpha = 0.6f)))
         Spacer(Modifier.width(18.dp))
@@ -238,7 +267,7 @@ fun Header(title: String, subtitle: String?, modifier: Modifier = Modifier) {
             BasicText(title.uppercase(), style = dashText(40.sp, Dash.Core, bold = true, spacing = 6.sp))
         }
         if (subtitle != null) {
-            BasicText(subtitle.uppercase(), style = dashText(14.sp, Dash.TextDim, bold = true, spacing = 3.sp), modifier = Modifier.padding(start = 32.dp, top = 6.dp))
+            BasicText(subtitle.uppercase(), style = dashText(16.sp, Dash.TextDim, bold = true, spacing = 3.sp), modifier = Modifier.padding(start = 32.dp, top = 6.dp))
         }
     }
 }
