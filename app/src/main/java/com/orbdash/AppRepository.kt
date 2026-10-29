@@ -132,6 +132,11 @@ class AppRepository(private val context: Context) {
         get() = prefs.getBoolean(KEY_HUM, false) // off by default: a humming TV is confusing
         set(value) = prefs.edit().putBoolean(KEY_HUM, value).apply()
 
+    /** Minutes idle on the dashboard before the screensaver starts; 0 = never. */
+    var saverMinutes: Int
+        get() = prefs.getInt(KEY_SAVER, 5)
+        set(value) = prefs.edit().putInt(KEY_SAVER, value).apply()
+
     /** "auto" (decided by [measuredSlow]), "full" or "reduced". */
     var effectsMode: String
         get() = prefs.getString(KEY_EFFECTS, "auto") ?: "auto"
@@ -168,6 +173,7 @@ class AppRepository(private val context: Context) {
         const val KEY_LAST = "last_package"
         const val KEY_SOUNDS = "sounds_on"
         const val KEY_HUM = "hum_on"
+        const val KEY_SAVER = "saver_minutes"
         const val KEY_WALLPAPER = "wallpaper"
         const val KEY_OPENED = "opened_"
         const val KEY_EFFECTS = "effects_mode"

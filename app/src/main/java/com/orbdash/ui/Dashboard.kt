@@ -69,6 +69,13 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val lastIndexIn = remember { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
     var soundsOn by remember { mutableStateOf(repo.soundsOn) }
     var humOn by remember { mutableStateOf(repo.humOn) }
+    var saverMinutes by remember { mutableIntStateOf(repo.saverMinutes) }
+    var saver by remember { mutableStateOf(false) }
+    // True once the screensaver has fully faded in: the dashboard behind it stops drawing (slow TVs).
+    var covered by remember { mutableStateOf(false) }
+    if (!saver) covered = false
+    // Time of the last button press. A plain holder, not state: it changes on every key and nothing draws it.
+    val lastInput = remember { longArrayOf(android.os.SystemClock.uptimeMillis()) }
     var effectsMode by remember { mutableStateOf(repo.effectsMode) }
     var measuredSlow by remember { mutableIntStateOf(repo.measuredSlow) }
     val reduced = when (effectsMode) {
@@ -172,6 +179,16 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             Entry("Background hum", "A soft drone while this screen is open. Stops when an app starts. Press OK to turn ${if (humOn) "off" else "on"}.", icon = Ico.WAVE, value = onOff(humOn), kind = "DASHBOARD", group = dash, okLabel = if (humOn) "TURN OFF" else "TURN ON") {
                 humOn = !humOn; repo.humOn = humOn
                 if (humOn) sfx.startHum() else sfx.stopHum()
+            },
+            Entry(
+                "Screensaver",
+                if (saverMinutes > 0) "Dims to a drifting orb and clock after $saverMinutes minutes without a button press, so nothing burns into the screen. Press OK to change."
+                else "Off: the dashboard stays on screen. Press OK to turn it on.",
+                icon = Ico.DISPLAY, value = if (saverMinutes > 0) "$saverMinutes MIN" else "OFF", kind = "DASHBOARD", group = dash, okLabel = "NEXT",
+            ) {
+                val options = listOf(2, 5, 15, 0)
+                saverMinutes = options[(options.indexOf(saverMinutes) + 1) % options.size]
+                repo.saverMinutes = saverMinutes
             },
             // Read-only: no action, so the OK hint disappears instead of promising something.
             Entry("About this TV", "Model, Android version and free space.", icon = Ico.INFO, kind = "INFO", group = dash, readouts = { repo.systemInfo(apps.size) }),
@@ -330,7 +347,25 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
         measuredSlow = if (fps < 40f) 1 else 0
         repo.measuredSlow = measuredSlow
     }
-    BackHandler(enabled = !booting) { goHome() }
+    BackHandler(enabled = !booting) { if (saver) saver = false else goHome() }
+
+    // Screensaver: after [saverMinutes] with no button presses on the dashboard. Not over the light show,
+    // which is a screensaver of its own, and the clock restarts whenever OrbDash comes back to the front.
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { lastInput[0] = android.os.SystemClock.uptimeMillis(); saver = false }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(saverMinutes, booting, screen == Screen.Visualizer) {
+        if (saverMinutes <= 0 || booting || screen == Screen.Visualizer) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(5_000)
+            if (android.os.SystemClock.uptimeMillis() - lastInput[0] >= saverMinutes * 60_000L) saver = true
+        }
+    }
 
     // The "camera": veins and tunnel converge on the orb at home and slide off to the corner in menus,
     // and every selection change tilts the view slightly so the layers parallax against each other.
@@ -353,6 +388,9 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             .focusable()
             .onPreviewKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                lastInput[0] = android.os.SystemClock.uptimeMillis()
+                // Any button just wakes the screensaver; it doesn't also move or open anything.
+                if (saver) { saver = false; return@onPreviewKeyEvent true }
                 if (booting) { booting = false; return@onPreviewKeyEvent true } // any key skips the intro
                 // In the light show: left/right change track, up/down change style, any key wakes the overlay.
                 if (screen == Screen.Visualizer) {
@@ -379,8 +417,8 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
                 }
             },
     ) {
-        Ambience(clock, veinFocus, camera, tunnel, wallpaperImage)
-        AnimatedContent(
+        if (!covered) Ambience(clock, veinFocus, camera, tunnel, wallpaperImage)
+        if (!covered) AnimatedContent(
             targetState = screen,
             transitionSpec = {
                 // Camera "flies into" a menu: new screen grows in, old one rushes past.
@@ -403,6 +441,15 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
                 )
                 Screen.Visualizer -> VisualizerScreen(player, renderer, clock, wokeAt)
             }
+        }
+        if (saver) {
+            val others = player.others
+            val song = when {
+                player.playing.value -> player.tracks.value.getOrNull(player.current.intValue)?.title
+                others.playing.value -> others.title.value
+                else -> null
+            }
+            Screensaver(clock, wallpaperImage, song, onCovered = { covered = true })
         }
         if (booting) Boot(clock, onStart = { sfx.boot() }, onDone = { booting = false })
     }
