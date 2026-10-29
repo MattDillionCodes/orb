@@ -93,7 +93,8 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                 val end = Offset(px.toPx() + 4f, py.toPx())
                 val a = atan2(end.y - o.y, end.x - o.x)
                 val start = Offset(o.x + cos(a) * orbR.toPx() * 0.9f, o.y + sin(a) * orbR.toPx() * 0.9f)
-                // Swaying means re-tessellating every tube every frame; slow TVs keep them still.
+                // Swaying means re-tessellating every tube every frame; slow TVs keep them still,
+                // but with the full shading and ribs, which cost little once the shape stops changing.
                 val sway = if (reduced) 0f else 10f * sin(t * 0.9f + i)
                 val path = Path().apply {
                     moveTo(start.x, start.y)
@@ -102,13 +103,13 @@ fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Flo
                 val sel = i == index
                 val width = if (sel) 18f else 12f
                 // Shaded tube: dark body, mid tone, then a highlight offset upwards like a lit cylinder.
-                if (!reduced) drawPath(path, Color.Black.copy(alpha = 0.5f * f), style = Stroke(width + 6f, cap = StrokeCap.Round))
+                drawPath(path, Color.Black.copy(alpha = 0.5f * f), style = Stroke(width + 6f, cap = StrokeCap.Round))
                 drawPath(path, Dash.Moss.copy(alpha = f), style = Stroke(width, cap = StrokeCap.Round))
                 drawPath(path, (if (sel) Dash.Lime else Dash.Green).copy(alpha = (if (sel) 0.9f else 0.5f) * f), style = Stroke(width * 0.45f, cap = StrokeCap.Round))
                 // Ribs make the tube read as organic tubing. A dashed stroke draws them all in one call
                 // (thin dashes across the full tube width) instead of dozens of separate lines.
-                if (!reduced) drawPath(path, Color.Black.copy(alpha = 0.35f * f), style = Stroke(width, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(1.5f, 14.5f))))
-                if (!reduced) drawPath(path, Color.White.copy(alpha = (if (sel) 0.55f else 0.18f) * f), style = Stroke(1.5f, cap = StrokeCap.Round))
+                drawPath(path, Color.Black.copy(alpha = 0.35f * f), style = Stroke(width, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(1.5f, 14.5f))))
+                drawPath(path, Color.White.copy(alpha = (if (sel) 0.55f else 0.18f) * f), style = Stroke(1.5f, cap = StrokeCap.Round))
                 if (sel) {
                     // A bead of light travelling from the orb out to the focused pod.
                     val pm = PathMeasure().apply { setPath(path, false) }
