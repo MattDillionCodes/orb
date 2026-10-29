@@ -84,14 +84,17 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val resumeApp = apps.firstOrNull { it.packageName == lastUsedPackage }
     val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
 
-    // The home list: Resume (the old disc slot) when there's something to resume,
-    // then every app as its own pod, A to Z, then Settings at the end.
+    // The home list opens as Settings, Music, then Resume in the focused middle pod,
+    // with every app as its own pod, A to Z, below it. The wheel wraps, so Settings
+    // sits two above Resume and the last apps loop round above it.
     val homeIds = buildList {
-        if (resumeApp != null) add(RESUME)
-        add(MUSIC)
-        apps.forEach { if (it.packageName != repo.systemSettingsPackage) add(APP + it.packageName) }
         add(SETTINGS)
+        add(MUSIC)
+        if (resumeApp != null) add(RESUME)
+        apps.forEach { if (it.packageName != repo.systemSettingsPackage) add(APP + it.packageName) }
     }
+    // Where focus lands when home opens: Resume, or Music when there's nothing to resume.
+    val homeStart = if (resumeApp != null) homeIds.indexOf(RESUME) else homeIds.indexOf(MUSIC)
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
     // Built once per app list (reloaded each time you come back), not on every key press:
     // it reads saved "last opened" times and formats dates, which is slow on a TV's CPU.
@@ -282,6 +285,9 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
 
     // Pressing Home while already on the dashboard returns to the orb.
     LaunchedEffect(homeTicks) { if (homeTicks > 0) { booting = false; screen = Screen.Home } }
+    // Opening home (launch, the Home button, or coming back from an app) focuses Resume.
+    // Keyed on the resume app too: apps load in the background, so Resume appears a moment after launch.
+    LaunchedEffect(homeTicks, resumeApp?.packageName) { homeIndex = homeStart }
     LaunchedEffect(Unit) { focus.requestFocus() }
     // First run: time ~1.5 s of frames with full effects. Under ~40 fps means this TV's graphics chip
     // can't keep up, so switch to reduced effects and remember it.
