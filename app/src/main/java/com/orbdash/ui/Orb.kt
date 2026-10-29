@@ -13,6 +13,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import kotlin.math.roundToInt
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -35,7 +40,7 @@ private fun blobPath(c: Offset, r: Float, t: Float, phase: Float): Path {
 /**
  * The gel orb, built back-to-front like a real translucent object:
  * floor light pool → halo → outer shell (bright at the rim, like fresnel) → body → inner shadow →
- * bubbles and filaments inside → orbit rings → core → caustic and speculars on the surface.
+ * membrane cell skin → bubbles → core → caustic and speculars on the surface.
  * [energy] (0..1) flares the core when something is selected.
  */
 @Composable
@@ -43,7 +48,8 @@ fun Orb(clock: State<Float>, energy: Float, modifier: Modifier) {
     // The orb is all gradients too, so it's rendered into a cached texture a limited number of times
     // a second; on slow TVs, less often and at lower resolution.
     val reduced = LocalReducedEffects.current
-    CachedCanvas(clock, fps = if (reduced) 10f else 30f, resolution = if (reduced) 0.5f else 0.75f, modifier = modifier, keys = listOf(energy)) { t ->
+    val cells = rememberCellTexture()
+    CachedCanvas(clock, fps = if (reduced) 10f else 30f, resolution = if (reduced) 0.5f else 0.75f, modifier = modifier, keys = listOf(energy, cells != null)) { t ->
         val c = center
         // The canvas is 1.5x the orb so its halo and floor glow fade out fully inside the cached
         // texture; anything past the texture edge would be cut off in a visible square.
@@ -67,14 +73,23 @@ fun Orb(clock: State<Float>, energy: Float, modifier: Modifier) {
             // Inner shadow on the side away from the light gives the ball its volume.
             drawCircle(Brush.radialGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color(0xCC021202), center = Offset(c.x - r * 0.35f, c.y - r * 0.4f), radius = r * 1.75f), r * 2f, c)
 
-            for (k in 0 until 5) {
-                val a0 = t * 0.35f + k * 1.26f
-                val fil = Path().apply {
-                    moveTo(c.x + cos(a0) * r * 0.15f, c.y + sin(a0) * r * 0.15f)
-                    quadraticBezierTo(c.x + cos(a0 + 1.2f) * r * 0.75f, c.y + sin(a0 + 1.2f) * r * 0.75f, c.x + cos(a0 + 2.1f) * r * 0.95f, c.y + sin(a0 + 2.1f) * r * 0.95f)
+            // Membrane skin: a cell-wall texture (generated in CellTexture.kt), drifting slowly
+            // so the globe looks alive.
+            cells?.let { tex ->
+                val tile = r * 0.9f
+                val drift = Offset((t * r * 0.03f) % tile, (t * r * 0.017f) % tile)
+                var y = c.y - r - tile + drift.y
+                while (y < c.y + r) {
+                    var x = c.x - r - tile + drift.x
+                    while (x < c.x + r) {
+                        drawImage(
+                            tex, dstOffset = IntOffset(x.roundToInt(), y.roundToInt()), dstSize = IntSize(tile.roundToInt() + 1, tile.roundToInt() + 1),
+                            alpha = 0.22f, colorFilter = ColorFilter.tint(Dash.Core, BlendMode.SrcIn),
+                        )
+                        x += tile
+                    }
+                    y += tile
                 }
-                drawPath(fil, Dash.Moss.copy(alpha = 0.16f), style = Stroke(width = r * 0.09f))
-                drawPath(fil, Dash.Core.copy(alpha = 0.10f), style = Stroke(width = r * 0.012f))
             }
 
             // Bubbles orbit the core in 3D: ones "in front" (sin > 0) are bigger and brighter.
@@ -85,17 +100,6 @@ fun Orb(clock: State<Float>, energy: Float, modifier: Modifier) {
                 val br = r * 0.028f * (1.4f + z)
                 drawCircle(Dash.Core.copy(alpha = 0.18f + 0.22f * (z + 1f) / 2f), br, p, style = Stroke(br * 0.35f))
                 drawCircle(Color.White.copy(alpha = 0.35f * (z + 1f) / 2f), br * 0.3f, p - Offset(br * 0.35f, br * 0.35f))
-            }
-        }
-
-        // Two tilted rings orbiting the core, like an atom; they give the inside real depth.
-        for ((i, tilt) in listOf(-22f, 34f).withIndex()) {
-            rotate(tilt + 6f * sin(t * 0.4f + i), c) {
-                val rw = r * (1.25f - 0.15f * i)
-                val rh = r * (0.3f + 0.06f * sin(t * 0.7f + i * 2f))
-                drawOval(Dash.Glow.copy(alpha = 0.32f), Offset(c.x - rw / 2, c.y - rh / 2), Size(rw, rh), style = Stroke(r * 0.018f))
-                val a = t * (1.1f + 0.4f * i)
-                drawCircle(Color.White.copy(alpha = 0.85f), r * 0.03f, Offset(c.x + cos(a) * rw / 2, c.y + sin(a) * rh / 2))
             }
         }
 
