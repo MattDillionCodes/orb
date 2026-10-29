@@ -142,6 +142,11 @@ class AppRepository(private val context: Context) {
         get() = prefs.getInt(KEY_SLOW, -1)
         set(value) = prefs.edit().putInt(KEY_SLOW, value).apply()
 
+    /** Whether we've already asked for the audio-analysis permission (only ask once). */
+    var askedAnalyse: Boolean
+        get() = prefs.getBoolean(KEY_ASKED_ANALYSE, false)
+        set(value) = prefs.edit().putBoolean(KEY_ASKED_ANALYSE, value).apply()
+
     var wallpaperId: String
         get() = prefs.getString(KEY_WALLPAPER, "living") ?: "living"
         set(value) = prefs.edit().putString(KEY_WALLPAPER, value).apply()
@@ -166,6 +171,7 @@ class AppRepository(private val context: Context) {
         const val KEY_WALLPAPER = "wallpaper"
         const val KEY_OPENED = "opened_"
         const val KEY_EFFECTS = "effects_mode"
+        const val KEY_ASKED_ANALYSE = "asked_analyse"
         const val KEY_SLOW = "measured_slow"
         const val KEY_INTRO_BOOT = "intro_boot"
     }

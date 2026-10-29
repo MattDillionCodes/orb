@@ -9,6 +9,7 @@ import com.orbdash.ui.Dashboard
 class MainActivity : ComponentActivity() {
     private lateinit var repo: AppRepository
     private lateinit var sfx: Sfx
+    private lateinit var player: com.orbdash.music.MusicPlayer
     private val apps = mutableStateOf<List<TvApp>>(emptyList())
     private val lastUsed = mutableStateOf<String?>(null)
     /** Bumped when Home is pressed while we're already in front, so the UI can return to the orb. */
@@ -18,6 +19,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         repo = AppRepository(this)
         sfx = Sfx(enabled = { repo.soundsOn }, humEnabled = { repo.humOn })
+        // Music and the ambient hum never play together.
+        player = com.orbdash.music.MusicPlayer(this).apply { onPlayingChanged = { playing -> if (playing) sfx.stopHum() else sfx.startHum() } }
         setContent {
             Dashboard(
                 apps = apps.value,
@@ -26,6 +29,7 @@ class MainActivity : ComponentActivity() {
                 repo = repo,
                 sfx = sfx,
                 playBoot = savedInstanceState == null && repo.shouldPlayIntro(),
+                player = player,
             )
         }
     }
@@ -39,12 +43,18 @@ class MainActivity : ComponentActivity() {
             val loaded = repo.loadApps()
             runOnUiThread { apps.value = loaded }
         }
-        sfx.startHum()
+        if (!player.playing.value) sfx.startHum()
     }
 
     override fun onPause() {
         super.onPause()
         sfx.stopHum() // never hum over someone's movie
+        player.pause() // and don't keep music going behind another app
+    }
+
+    override fun onDestroy() {
+        player.release()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

@@ -46,15 +46,18 @@ import java.util.Locale
 private sealed interface Screen {
     data object Home : Screen
     data class Section(val id: String) : Screen
+    /** Full-screen music light show. */
+    data object Visualizer : Screen
 }
 
 private const val SETTINGS = "settings"
 private const val RESUME = "resume"
+private const val MUSIC = "music"
 /** Home ids for app pods are "app:" + package name. */
 private const val APP = "app:"
 
 @Composable
-fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo: AppRepository, sfx: Sfx, playBoot: Boolean) {
+fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo: AppRepository, sfx: Sfx, playBoot: Boolean, player: com.orbdash.music.MusicPlayer) {
     val context = LocalContext.current
     val clock = rememberClock()
     val scope = rememberCoroutineScope()
@@ -85,16 +88,19 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     // then every app as its own pod, A to Z, then Settings at the end.
     val homeIds = buildList {
         if (resumeApp != null) add(RESUME)
+        add(MUSIC)
         apps.forEach { if (it.packageName != repo.systemSettingsPackage) add(APP + it.packageName) }
         add(SETTINGS)
     }
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
     // Built once per app list (reloaded each time you come back), not on every key press:
     // it reads saved "last opened" times and formats dates, which is slow on a TV's CPU.
-    val homeItems = remember(apps, resumeApp) { homeIds.map { id ->
+    val musicPlaying = player.playing.value
+    val homeItems = remember(apps, resumeApp, musicPlaying) { homeIds.map { id ->
         val app = appsByPackage[id.removePrefix(APP)]
         when {
             id == RESUME -> MenuItem("RESUME", resumeApp!!.label, "Pick up where you left off in ${resumeApp.label}.", Ico.RESUME)
+            id == MUSIC -> MenuItem("MUSIC", if (musicPlaying) "playing" else null, "Your music with a light show, like the original's visualizer.", Ico.NOTE)
             app != null -> MenuItem(
                 label = app.label,
                 // categorize() labels each app (WATCH / MUSIC / GAMES); plain apps get no label.
@@ -163,18 +169,85 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
         )
     }
 
+    // --- Music ---------------------------------------------------------------------------------
+    val renderer = remember(player) { com.orbdash.music.VisualRenderer(player) }
+    var musicScan by remember { mutableIntStateOf(0) } // bump to rescan after a permission grant
+    var canRead by remember { mutableStateOf(com.orbdash.music.MusicLibrary.canRead(context)) }
+    var wokeAt by remember { androidx.compose.runtime.mutableFloatStateOf(0f) } // last button press in the visualizer
+    val readPermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        canRead = granted; musicScan++
+    }
+    // A track waiting for the permission answer: the system dialog pauses the app, so playback
+    // starts only once it's closed (otherwise the song would sit paused behind the dialog).
+    var pendingTrack by remember { mutableIntStateOf(-1) }
+    fun startTrack(i: Int) { player.play(i); wokeAt = clock.value; screen = Screen.Visualizer }
+    val analysePermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
+        if (pendingTrack >= 0) { startTrack(pendingTrack); pendingTrack = -1 }
+    }
+    LaunchedEffect(screen == Screen.Section(MUSIC), musicScan) {
+        if (screen != Screen.Section(MUSIC) && player.tracks.value.isNotEmpty()) return@LaunchedEffect
+        player.tracks.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            listOf(com.orbdash.music.DemoTrack.get(context)) + com.orbdash.music.MusicLibrary.scan(context)
+        }
+    }
+    fun playTrack(i: Int) {
+        // Sound analysis needs this permission; ask once, before the first song starts.
+        if (!com.orbdash.music.MusicLibrary.canAnalyse(context) && !repo.askedAnalyse) {
+            repo.askedAnalyse = true
+            pendingTrack = i
+            analysePermission.launch(android.Manifest.permission.RECORD_AUDIO)
+        } else startTrack(i)
+    }
+    fun musicEntries(): List<Entry> = buildList {
+        val list = player.tracks.value
+        val cur = list.getOrNull(player.current.intValue)
+        if (cur != null) add(Entry(
+            "Now playing", "${cur.title} · ${cur.artist}. Press OK to show the light show.", icon = Ico.WAVE, kind = "PLAYER",
+            group = "NOW PLAYING", okLabel = "SHOW", value = if (player.playing.value) "PLAYING" else "PAUSED",
+        ) { wokeAt = clock.value; screen = Screen.Visualizer })
+        list.forEachIndexed { i, t ->
+            val mins = t.durationMs / 60_000; val secs = (t.durationMs / 1000) % 60
+            add(Entry(
+                t.title, "Press OK to play it with the light show.", icon = Ico.NOTE, kind = "TRACK",
+                group = if (i == 0) "BUILT-IN DEMO" else "ON THIS TV", okLabel = "PLAY",
+                value = if (i == player.current.intValue && player.playing.value) "PLAYING" else null,
+                readouts = { listOf("ARTIST" to t.artist, "ALBUM" to t.album.ifBlank { "—" }, "LENGTH" to "%d:%02d".format(mins, secs)) },
+            ) { playTrack(i) })
+        }
+        if (!canRead) add(Entry(
+            "Find music on this TV", "Let OrbDash see songs on USB drives and in the TV's Music folder.", icon = Ico.STORE, kind = "LIBRARY",
+            group = "ON THIS TV", okLabel = "ALLOW",
+        ) { readPermission.launch(com.orbdash.music.MusicLibrary.readPermission) })
+        else if (list.size <= 1) add(Entry(
+            "No music found", "Copy MP3 or FLAC files to a USB drive, plug it into the TV, and come back here.", icon = Ico.INFO, kind = "LIBRARY", group = "ON THIS TV",
+        ))
+    }
+
     val section = screen as? Screen.Section
-    val entries: List<Entry> = if (section?.id == SETTINGS) settingsEntries() else emptyList()
+    val entries: List<Entry> = when (section?.id) {
+        SETTINGS -> settingsEntries()
+        MUSIC -> musicEntries()
+        else -> emptyList()
+    }
     listIndex = listIndex.coerceIn(0, (entries.size - 1).coerceAtLeast(0))
-    val subtitle = if (section != null) "TV and dashboard options" else null
+    val subtitle = when (section?.id) {
+        null -> null
+        MUSIC -> "Soundtracks"
+        else -> "TV and dashboard options"
+    }
 
     fun flare() = scope.launch { energy.snapTo(1f); energy.animateTo(0f, tween(700)) }
 
     fun goHome() {
-        if (screen != Screen.Home) { sfx.back(); screen = Screen.Home }
+        when (screen) {
+            Screen.Home -> {}
+            Screen.Visualizer -> { sfx.back(); screen = Screen.Section(MUSIC) } // the music keeps playing
+            else -> { sfx.back(); screen = Screen.Home }
+        }
     }
 
     fun select() {
+        if (screen == Screen.Visualizer) { wokeAt = clock.value; player.toggle(); return }
         // Info-only rows ignore OK entirely: no chime, no flare, nothing that implies an action.
         val action = if (screen is Screen.Section) entries.getOrNull(listIndex)?.action ?: return else null
         sfx.select(); flare()
@@ -188,6 +261,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
                 }
             }
             is Screen.Section -> action?.invoke()
+            Screen.Visualizer -> {}
         }
     }
 
@@ -246,6 +320,20 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             .onPreviewKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 if (booting) { booting = false; return@onPreviewKeyEvent true } // any key skips the intro
+                // In the light show: left/right change track, up/down change style, any key wakes the overlay.
+                if (screen == Screen.Visualizer) {
+                    wokeAt = clock.value
+                    when (ev.key) {
+                        Key.DirectionLeft -> { player.previous(); return@onPreviewKeyEvent true }
+                        Key.DirectionRight -> { player.next(); return@onPreviewKeyEvent true }
+                        Key.DirectionUp, Key.DirectionDown -> {
+                            val n = com.orbdash.music.VisualRenderer.STYLES.size
+                            renderer.style = (renderer.style + (if (ev.key == Key.DirectionUp) -1 else 1) + n) % n
+                            sfx.move(); return@onPreviewKeyEvent true
+                        }
+                        else -> {}
+                    }
+                }
                 when (ev.key) {
                     Key.DirectionUp -> { move(-1); true }
                     Key.DirectionDown -> { move(1); true }
@@ -279,6 +367,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
                     index = listIndex,
                     clock = clock,
                 )
+                Screen.Visualizer -> VisualizerScreen(player, renderer, clock, wokeAt)
             }
         }
         if (booting) Boot(clock, onStart = { sfx.boot() }, onDone = { booting = false })
