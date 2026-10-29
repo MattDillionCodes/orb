@@ -37,7 +37,7 @@ You need a computer with [adb](https://developer.android.com/tools/adb) and a TV
    Accept the debugging prompt on the TV the first time.
 4. Open ORB UI from the TV's app list. It doesn't replace your home screen unless you choose to: pressing Home asks which to use on some TVs, and on others it must be set with adb.
 
-To remove it: `adb uninstall com.orbdash`.
+To remove it: `adb uninstall io.github.mattdillioncodes.orb`.
 
 ## Build
 
@@ -66,7 +66,7 @@ This needs ORB UI's **notification access**, which the Music screen offers to op
 On a TV whose Settings hide that switch, turn it on from a computer:
 
 ```bash
-adb shell cmd notification allow_listener com.orbdash/com.orbdash.music.MediaListener
+adb shell cmd notification allow_listener io.github.mattdillioncodes.orb/com.orbdash.music.MediaListener
 ```
 
 Notes:

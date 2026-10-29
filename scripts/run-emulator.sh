@@ -47,10 +47,10 @@ echo "Using $SERIAL ($AVD)"
 # 3. Build, install, and make ORB UI the Home app on this emulator only.
 "$ROOT/gradlew" -p "$ROOT" :app:assembleDebug -q
 "$ADB" -s "$SERIAL" install -r "$ROOT/app/build.nosync/outputs/apk/debug/app-debug.apk" >/dev/null
-"$ADB" -s "$SERIAL" shell cmd package set-home-activity com.orbdash/.MainActivity >/dev/null
+"$ADB" -s "$SERIAL" shell cmd package set-home-activity io.github.mattdillioncodes.orb/com.orbdash.MainActivity >/dev/null
 # The stock TV launcher always wins the Home button, so switch it off here (undo: pm enable).
 "$ADB" -s "$SERIAL" shell pm disable-user --user 0 com.google.android.tvlauncher >/dev/null 2>&1 || true
 # Let the Music screen follow other music apps (the same switch as Settings > notification access).
-"$ADB" -s "$SERIAL" shell cmd notification allow_listener com.orbdash/com.orbdash.music.MediaListener >/dev/null 2>&1 || true
-"$ADB" -s "$SERIAL" shell am start -n com.orbdash/.MainActivity >/dev/null
+"$ADB" -s "$SERIAL" shell cmd notification allow_listener io.github.mattdillioncodes.orb/com.orbdash.music.MediaListener >/dev/null 2>&1 || true
+"$ADB" -s "$SERIAL" shell am start -n io.github.mattdillioncodes.orb/com.orbdash.MainActivity >/dev/null
 echo "ORB UI is running on $AVD."
