@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
         super.onPause()
         resumed = false
         sfx.stopHum() // never hum over someone's movie
-        player.pause() // and don't keep music going behind another app
+        player.pause("OrbDash left the screen") // and don't keep music going behind another app
     }
 
     override fun onDestroy() {

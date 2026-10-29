@@ -95,8 +95,9 @@ fun VisualizerScreen(player: MusicPlayer, renderer: VisualRenderer, clock: State
             BasicText(details.joinToString("  ·  "), style = dashText(20.sp, Dash.Text), maxLines = 1)
         }
 
+        val failed = !following && player.error.value != null
         if (!playing && hasMusic) {
-            BasicText("PAUSED", style = dashText(30.sp, Dash.Core, bold = true, spacing = 10.sp), modifier = Modifier.align(Alignment.Center).alpha(0.85f))
+            BasicText(if (failed) "CAN'T PLAY" else "PAUSED", style = dashText(30.sp, Dash.Core, bold = true, spacing = 10.sp), modifier = Modifier.align(Alignment.Center).alpha(0.85f))
         }
 
         Column(
@@ -118,7 +119,7 @@ fun VisualizerScreen(player: MusicPlayer, renderer: VisualRenderer, clock: State
             }
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.CenterVertically) {
                 Glyph("◀▶", Color(0xFF3C5A33), "TRACK")
-                Glyph("OK", Dash.ButtonA, if (playing) "PAUSE" else "PLAY")
+                Glyph("OK", Dash.ButtonA, if (failed) "TRY AGAIN" else if (playing) "PAUSE" else "PLAY")
                 Glyph("▲▼", Color(0xFF3C5A33), "STYLE")
                 Glyph("◀", Dash.ButtonB, "BACK")
             }

@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.audiofx.Visualizer
 import android.net.Uri
+import android.util.Log
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import kotlin.math.hypot
@@ -29,6 +30,8 @@ class MusicPlayer(private val context: Context) {
     val tracks = mutableStateOf<List<Track>>(emptyList())
     val current = mutableIntStateOf(-1)
     val playing = mutableStateOf(false)
+    /** Set when the TV's player fails, so the screen can say so instead of a misleading "Paused". */
+    val error = mutableStateOf<String?>(null)
     val others = OtherApps(context)
     /** True while the light show follows another app rather than one of our tracks. */
     val followingOther = mutableStateOf(false)
@@ -54,16 +57,18 @@ class MusicPlayer(private val context: Context) {
         followingOther.value = false
         release()
         current.intValue = index
+        error.value = null
+        val track = list[index]
         val mp = MediaPlayer()
         player = mp
         runCatching {
             mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            mp.setDataSource(context, list[index].uri)
+            mp.setDataSource(context, track.uri)
             mp.setOnPreparedListener { it.start(); setPlaying(true); attachVisualizer(it.audioSessionId) }
             mp.setOnCompletionListener { next() }
-            mp.setOnErrorListener { _, _, _ -> setPlaying(false); true }
+            mp.setOnErrorListener { _, what, extra -> failed(track, "player error what=$what extra=$extra"); true }
             mp.prepareAsync()
-        }.onFailure { setPlaying(false) }
+        }.onFailure { failed(track, "couldn't open: $it") }
     }
 
     /** Show the light show for whatever another app is playing; our own track stops. */
@@ -83,7 +88,10 @@ class MusicPlayer(private val context: Context) {
         runCatching { if (mp.isPlaying) { mp.pause(); setPlaying(false) } else { mp.start(); setPlaying(true) } }
     }
 
-    fun pause() { runCatching { player?.takeIf { it.isPlaying }?.pause() }; setPlaying(false) }
+    /** [reason] goes to the log, so an unexpected pause can be traced later (adb logcat -s OrbDashMusic). */
+    fun pause(reason: String = "pause pressed") {
+        if (playing.value) Log.i(TAG, "Paused: $reason")
+        runCatching { player?.takeIf { it.isPlaying }?.pause() }; setPlaying(false) }
     fun next() { if (followingOther.value) return others.next(); val n = tracks.value.size; if (n > 0) play((current.intValue + 1) % n) }
     fun previous() { if (followingOther.value) return others.previous(); val n = tracks.value.size; if (n > 0) play((current.intValue - 1 + n) % n) }
 
@@ -94,6 +102,16 @@ class MusicPlayer(private val context: Context) {
     fun retryAnalysis() { if (followingOther.value) attachVisualizer(0) else player?.let { attachVisualizer(it.audioSessionId) } }
 
     fun release() {
+        runCatching { visualizer?.release() }; visualizer = null; analysing = false
+        runCatching { player?.release() }; player = null
+        setPlaying(false)
+    }
+
+    private fun failed(track: Track, why: String) {
+        Log.w(TAG, "Couldn't play \"${track.title}\" (${track.uri}): $why")
+        error.value = "Couldn't play this song"
+        // A failed player answers every later call (like the time bar asking its position) with another
+        // error, so close it now. Pressing OK on the song makes a fresh one and tries again.
         runCatching { visualizer?.release() }; visualizer = null; analysing = false
         runCatching { player?.release() }; player = null
         setPlaying(false)
@@ -141,5 +159,7 @@ class MusicPlayer(private val context: Context) {
         return Bands(bass, mid, high, beat, wave)
     }
 }
+
+private const val TAG = "OrbDashMusic"
 
 class Bands(val bass: Float, val mid: Float, val high: Float, val beat: Boolean, val wave: ByteArray?)

@@ -212,9 +212,11 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     fun musicEntries(): List<Entry> = buildList {
         val list = player.tracks.value
         val cur = list.getOrNull(player.current.intValue)
+        val failed = player.error.value
         if (cur != null) add(Entry(
-            "Now playing", "${cur.title} · ${cur.artist}. Press OK to show the light show.", icon = Ico.WAVE, kind = "PLAYER",
-            group = "NOW PLAYING", okLabel = "SHOW", value = if (player.playing.value) "PLAYING" else "PAUSED",
+            "Now playing", if (failed != null) "Couldn't play ${cur.title}. Open it and press OK to try again." else "${cur.title} · ${cur.artist}. Press OK to show the light show.",
+            icon = Ico.WAVE, kind = "PLAYER",
+            group = "NOW PLAYING", okLabel = "SHOW", value = if (failed != null) "CAN'T PLAY" else if (player.playing.value) "PLAYING" else "PAUSED",
         ) { wokeAt = clock.value; screen = Screen.Visualizer })
         // Another music app: show what it's playing, or how to connect them.
         val otherGroup = "OTHER MUSIC APPS"
@@ -231,7 +233,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             value = if (others.playing.value) "PLAYING" else "PAUSED",
         ) { withAnalysis { showOther() } })
         else add(Entry(
-            "Nothing playing in other apps", "Start a song in Spotify, YouTube Music or another music app, then come back here.",
+            "Nothing playing", "Start a song in Spotify, YouTube Music or another music app, then come back here.",
             icon = Ico.INFO, kind = "APPS", group = otherGroup,
         ))
         list.forEachIndexed { i, t ->
