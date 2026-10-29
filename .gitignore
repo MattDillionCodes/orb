@@ -13,3 +13,22 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+# Signing keys and secrets (never commit)
+*.jks
+*.keystore
+*.p12
+keystore.properties
+.env
+.env.*
+google-services.json
+
+# Gradle (any level) and more IDE files
+**/build/
+**/.gradle/
+captures/
+.externalNativeBuild/
+.cxx/
+.vscode/
+.fleet/
+*.swp
