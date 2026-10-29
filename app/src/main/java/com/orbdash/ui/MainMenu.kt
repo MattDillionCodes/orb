@@ -39,11 +39,10 @@ import kotlin.math.sqrt
 
 data class MenuItem(val label: String, val sub: String?, val blurb: String, val icon: Ico)
 
-private val PodWidth = 290.dp
-private val PodHeight = 48.dp
-/** Vertical band the pod column must stay inside: below the status row, above the app dock. */
-private const val BAND_TOP_DP = 70f
-private const val BAND_DP = 286f
+private val PodWidth = 300.dp
+private val PodHeight = 54.dp
+/** Vertical band the pod column must stay inside: below the status row, above the info panel. */
+private const val BAND_DP = 370f
 
 /**
  * Home: the orb sits in the left third; menu pods hang off it on an arc to the right,
@@ -51,14 +50,11 @@ private const val BAND_DP = 286f
  * [camera] nudges the orb opposite to the backdrop for a little parallax.
  */
 @Composable
-fun MainMenu(
-    items: List<MenuItem>, index: Int, clock: State<Float>, energy: Float, camera: Offset,
-    apps: List<com.orbdash.TvApp>, dockIndex: Int, dockFocused: Boolean,
-) {
+fun MainMenu(items: List<MenuItem>, index: Int, clock: State<Float>, energy: Float, camera: Offset) {
     // More pods pack tighter; whatever room is left over is how far the column may glide
     // to bring the focused pod towards the orb's eye line.
     val gaps = (items.size - 1).coerceAtLeast(1)
-    val spacing = minOf(66f, (BAND_DP - PodHeight.value - 6f) / gaps)
+    val spacing = minOf(70f, (BAND_DP - PodHeight.value - 6f) / gaps)
     val slack = BAND_DP - (gaps * spacing + PodHeight.value)
     val glideRate = (slack / (gaps * spacing)).coerceIn(0f, 0.22f)
     val glide by animateFloatAsState(-(index - (items.size - 1) / 2f) * glideRate, tween(320), label = "glide")
@@ -66,10 +62,10 @@ fun MainMenu(
         val w = maxWidth
         val h = maxHeight
         val ox = w * (0.29f + camera.x * 0.4f)
-        val oy = (BAND_TOP_DP + BAND_DP / 2).dp + h * (camera.y * 0.4f)
-        val orbSize = h * 0.56f
+        val oy = h * (0.472f + camera.y * 0.4f)
+        val orbSize = h * 0.70f
         val orbR = orbSize * 0.36f
-        val arcR = orbR + 130.dp
+        val arcR = orbR + 140.dp
 
         // Pod anchor points (left-centre of each pill) on a circle around the orb.
         val pods = items.indices.map { i ->
@@ -91,7 +87,7 @@ fun MainMenu(
                     moveTo(start.x, start.y)
                     cubicTo(start.x + (end.x - start.x) * 0.55f, start.y + sway, end.x - (end.x - start.x) * 0.45f, end.y - sway, end.x, end.y)
                 }
-                val sel = i == index && !dockFocused
+                val sel = i == index
                 val width = if (sel) 18f else 12f
                 // Shaded tube: dark body, mid tone, then a highlight offset upwards like a lit cylinder.
                 drawPath(path, Color.Black.copy(alpha = 0.5f), style = Stroke(width + 6f, cap = StrokeCap.Round))
@@ -126,9 +122,8 @@ fun MainMenu(
             JellyPill(
                 text = item.label,
                 sub = item.sub,
-                selected = i == index && !dockFocused,
+                selected = i == index,
                 height = PodHeight,
-                textSize = 22.sp,
                 icon = item.icon,
                 depth = (abs(i - index) / 3f).coerceAtMost(1f),
                 modifier = Modifier.offset(px, py - PodHeight / 2).width(PodWidth).height(PodHeight),
@@ -137,23 +132,27 @@ fun MainMenu(
 
         StatusCluster(Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = 48.dp))
 
-        // The dock: every app, one press away. Its caption doubles as the plain-language
-        // description of whatever is focused, pod or app.
-        val focusedApp = apps.getOrNull(dockIndex)
-        val pod = items.getOrNull(index)
-        Dock(
-            apps = apps,
-            index = dockIndex,
-            focused = dockFocused,
-            heading = if (dockFocused) "APPS  ${dockIndex + 1} / ${apps.size}" else (pod?.label ?: ""),
-            caption = if (dockFocused) (focusedApp?.let { "${it.label}  ·  press OK to open" } ?: "") else (pod?.blurb ?: "") + "   ▼ Apps below",
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 48.dp, end = 48.dp, top = 354.dp),
-        )
-        Legend(
-            Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 26.dp),
-            okLabel = "OPEN",
-            backLabel = if (dockFocused) "MENU" else null,
-            horizontal = dockFocused,
-        )
+        // Plain-language description of the focused pod, so nobody has to guess what it does.
+        items.getOrNull(index)?.let {
+            Row(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 48.dp, bottom = 28.dp)
+                    .width(540.dp)
+                    .bracketFrame(Dash.PanelEdge, len = 12.dp, gap = 4.dp)
+                    .background(Brush.horizontalGradient(listOf(Color(0x99062206), Color(0x55062206))), RoundedCornerShape(6.dp))
+                    .border(1.dp, Dash.PanelEdge.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconView(it.icon, Modifier.size(34.dp), Dash.Glow)
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    BasicText(it.label, style = dashText(15.sp, Dash.Glow, bold = true, spacing = 3.sp))
+                    BasicText(it.blurb, style = dashText(18.sp, Dash.Text), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Legend(Modifier.align(Alignment.BottomStart).padding(start = 48.dp, bottom = 30.dp), okLabel = "OPEN", backLabel = null)
     }
 }

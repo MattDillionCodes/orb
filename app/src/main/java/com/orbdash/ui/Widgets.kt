@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -173,17 +172,17 @@ fun Glyph(symbol: String, color: Color, label: String) {
  * Pass null for [okLabel] when OK does nothing on the focused item, so the hint never lies.
  */
 @Composable
-fun Legend(modifier: Modifier = Modifier, okLabel: String? = "SELECT", backLabel: String? = "BACK", horizontal: Boolean = false) {
+fun Legend(modifier: Modifier = Modifier, okLabel: String? = "SELECT", backLabel: String? = "BACK") {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
-        MoveGlyph(horizontal)
+        MoveGlyph()
         if (okLabel != null) Glyph("OK", Dash.ButtonA, okLabel)
         if (backLabel != null) Glyph("◀", Dash.ButtonB, backLabel)
     }
 }
 
-/** Neutral round glyph with arrows: "use the D-pad to move" (left/right in the dock, up/down elsewhere). */
+/** Neutral round glyph with up/down arrows: "use the D-pad to move". */
 @Composable
-private fun MoveGlyph(horizontal: Boolean) {
+private fun MoveGlyph() {
     Row(verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.foundation.Canvas(
             Modifier
@@ -198,10 +197,8 @@ private fun MoveGlyph(horizontal: Boolean) {
                 lineTo(c.x + s * 0.16f, c.y + dir * s * 0.1f)
                 close()
             }
-            rotate(if (horizontal) 90f else 0f, c) {
-                drawPath(tri(-1f), Color.White)
-                drawPath(tri(1f), Color.White)
-            }
+            drawPath(tri(-1f), Color.White)
+            drawPath(tri(1f), Color.White)
         }
         BasicText("MOVE", style = dashText(18.sp, Dash.Text, bold = true, spacing = 2.sp), modifier = Modifier.padding(start = 10.dp))
     }

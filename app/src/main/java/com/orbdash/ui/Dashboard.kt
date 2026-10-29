@@ -48,6 +48,7 @@ private sealed interface Screen {
     data class Section(val id: String) : Screen
 }
 
+private const val ALL = "all"
 private const val SETTINGS = "settings"
 private const val RESUME = "resume"
 
@@ -60,9 +61,6 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var homeIndex by remember { mutableIntStateOf(0) }
     var listIndex by remember { mutableIntStateOf(0) }
-    // The app dock along the bottom of home: whether it has focus, and which tile.
-    var dockFocused by remember { mutableStateOf(false) }
-    var dockIndex by remember { mutableIntStateOf(0) }
     // Where you were in each list, so coming back to Watch lands on the app you left from.
     val lastIndexIn = remember { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
     var soundsOn by remember { mutableStateOf(repo.soundsOn) }
@@ -77,11 +75,10 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
 
     // Home pods. "Resume" takes the old disc slot at the top and only shows when there's something to resume.
     // Category pods only appear when they have apps in them: on a TV, an empty menu is a wasted trip.
-    // There's no "All apps" pod: every app is already one press away in the dock.
     val homeIds = buildList {
         if (resumeApp != null) add(RESUME)
         for (c in listOf(Category.WATCH, Category.MUSIC, Category.GAMES)) if (!buckets[c].isNullOrEmpty()) add(c.name)
-        add(SETTINGS)
+        add(ALL); add(SETTINGS)
     }
     fun count(c: Category) = buckets[c]?.size ?: 0
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
@@ -91,12 +88,11 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             Category.WATCH.name -> MenuItem("WATCH", plural(count(Category.WATCH)), "Your video apps: shows, movies and YouTube.", Ico.PLAY)
             Category.MUSIC.name -> MenuItem("MUSIC", plural(count(Category.MUSIC)), "Your music, radio and podcast apps.", Ico.NOTE)
             Category.GAMES.name -> MenuItem("GAMES", plural(count(Category.GAMES)), "Your games and game-streaming apps.", Ico.PAD)
+            ALL -> MenuItem("ALL APPS", plural(apps.size), "Every app on this TV, A to Z.", Ico.GRID)
             else -> MenuItem("SETTINGS", null, "Wi-Fi, picture, sound and dashboard options.", Ico.GEAR)
         }
     }
     homeIndex = homeIndex.coerceIn(0, homeItems.lastIndex)
-    dockIndex = dockIndex.coerceIn(0, (apps.size - 1).coerceAtLeast(0))
-    if (apps.isEmpty()) dockFocused = false
 
     fun appEntries(list: List<TvApp>, emptyHint: String): List<Entry> =
         list.map { a ->
@@ -150,6 +146,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val entries: List<Entry> = when (section?.id) {
         null -> emptyList()
         SETTINGS -> settingsEntries()
+        ALL -> appEntries(apps, "No apps installed yet.")
         Category.WATCH.name -> appEntries(buckets[Category.WATCH].orEmpty(), "No video apps found.")
         Category.MUSIC.name -> appEntries(buckets[Category.MUSIC].orEmpty(), "No music apps found.")
         else -> appEntries(buckets[Category.GAMES].orEmpty(), "No games found.")
@@ -164,17 +161,10 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     fun flare() = scope.launch { energy.snapTo(1f); energy.animateTo(0f, tween(700)) }
 
     fun goHome() {
-        when {
-            screen != Screen.Home -> { sfx.back(); screen = Screen.Home }
-            dockFocused -> { sfx.back(); dockFocused = false } // Back from the dock returns to the menu
-        }
+        if (screen != Screen.Home) { sfx.back(); screen = Screen.Home }
     }
 
     fun select() {
-        if (screen == Screen.Home && dockFocused) {
-            apps.getOrNull(dockIndex)?.let { sfx.select(); flare(); repo.launch(it) }
-            return
-        }
         // Info-only rows ignore OK entirely: no chime, no flare, nothing that implies an action.
         val action = if (screen is Screen.Section) entries.getOrNull(listIndex)?.action ?: return else null
         sfx.select(); flare()
@@ -189,16 +179,8 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
 
     fun move(delta: Int) {
         if (screen == Screen.Home) {
-            when {
-                // Up out of the dock lands back on the pod you came from.
-                dockFocused -> if (delta < 0) { dockFocused = false; sfx.move() }
-                // Down past the last pod drops into the dock, like walking down the screen.
-                delta > 0 && homeIndex == homeItems.lastIndex && apps.isNotEmpty() -> { dockFocused = true; sfx.move() }
-                else -> {
-                    val next = (homeIndex + delta).coerceIn(0, homeItems.lastIndex)
-                    if (next != homeIndex) { homeIndex = next; sfx.move() }
-                }
-            }
+            val next = (homeIndex + delta).coerceIn(0, homeItems.lastIndex)
+            if (next != homeIndex) { homeIndex = next; sfx.move() }
         } else {
             val next = (listIndex + delta).coerceIn(0, (entries.size - 1).coerceAtLeast(0))
             if (next != listIndex) {
@@ -208,13 +190,8 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
         }
     }
 
-    fun moveDock(delta: Int) {
-        val next = (dockIndex + delta).coerceIn(0, (apps.size - 1).coerceAtLeast(0))
-        if (next != dockIndex) { dockIndex = next; sfx.move() }
-    }
-
     // Pressing Home while already on the dashboard returns to the orb.
-    LaunchedEffect(homeTicks) { if (homeTicks > 0) { booting = false; screen = Screen.Home; dockFocused = false } }
+    LaunchedEffect(homeTicks) { if (homeTicks > 0) { booting = false; screen = Screen.Home } }
     LaunchedEffect(Unit) { focus.requestFocus() }
     BackHandler(enabled = !booting) { goHome() }
 
@@ -222,11 +199,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     // and every selection change tilts the view slightly so the layers parallax against each other.
     val home = screen == Screen.Home
     val veinFocus by animateOffsetAsState(if (home) Offset(0.29f, 0.5f) else Offset(0.97f, 0.12f), tween(450), label = "veins")
-    val tilt = when {
-        home && dockFocused -> homeItems.size / 2f + 1f // look down towards the dock
-        home -> (homeIndex - (homeItems.size - 1) / 2f)
-        else -> (listIndex.coerceAtMost(8) - 4f) * 0.5f
-    }
+    val tilt = if (home) (homeIndex - (homeItems.size - 1) / 2f) else (listIndex.coerceAtMost(8) - 4f) * 0.5f
     val camera by animateOffsetAsState(Offset(-0.004f * tilt, -0.012f * tilt), tween(600), label = "camera")
     val tunnel by animateFloatAsState(if (home) 0.3f else 1f, tween(500), label = "tunnel")
 
@@ -241,8 +214,8 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
                 when (ev.key) {
                     Key.DirectionUp -> { move(-1); true }
                     Key.DirectionDown -> { move(1); true }
-                    Key.DirectionRight -> { if (screen == Screen.Home) { if (dockFocused) moveDock(1) else select() }; true }
-                    Key.DirectionLeft -> { if (screen == Screen.Home && dockFocused) moveDock(-1) else goHome(); true }
+                    Key.DirectionRight -> { if (screen == Screen.Home) select(); true }
+                    Key.DirectionLeft -> { goHome(); true }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.ButtonA -> { select(); true }
                     Key.ButtonB -> { goHome(); true }
                     else -> false
@@ -263,7 +236,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             label = "screens",
         ) { s ->
             when (s) {
-                Screen.Home -> MainMenu(homeItems, homeIndex, clock, energy.value, camera, apps, dockIndex, dockFocused)
+                Screen.Home -> MainMenu(homeItems, homeIndex, clock, energy.value, camera)
                 is Screen.Section -> ListScreen(
                     title = homeItems.getOrNull(homeIds.indexOf(s.id))?.label ?: s.id,
                     subtitle = subtitle,
