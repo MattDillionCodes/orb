@@ -40,10 +40,14 @@ private fun blobPath(c: Offset, r: Float, t: Float, phase: Float): Path {
  */
 @Composable
 fun Orb(clock: State<Float>, energy: Float, modifier: Modifier) {
-    Canvas(modifier) {
-        val t = clock.value
+    // The orb is all gradients too, so it's rendered into a cached texture a limited number of times
+    // a second; on slow TVs, less often and at lower resolution.
+    val reduced = LocalReducedEffects.current
+    CachedCanvas(clock, fps = if (reduced) 10f else 30f, resolution = if (reduced) 0.5f else 0.75f, modifier = modifier, keys = listOf(energy)) { t ->
         val c = center
-        val r = size.minDimension * 0.36f * (1f + 0.025f * sin(t * 1.6f))
+        // The canvas is 1.5x the orb so its halo and floor glow fade out fully inside the cached
+        // texture; anything past the texture edge would be cut off in a visible square.
+        val r = size.minDimension * 0.24f * (1f + 0.025f * sin(t * 1.6f))
 
         // Light the orb casts on an imaginary floor; squashed into an ellipse for perspective.
         val floor = Offset(c.x, c.y + r * 1.42f)
@@ -51,7 +55,7 @@ fun Orb(clock: State<Float>, energy: Float, modifier: Modifier) {
             drawCircle(Brush.radialGradient(listOf(Dash.Lime.copy(alpha = 0.55f + 0.3f * energy), Dash.Green.copy(alpha = 0.2f), Color.Transparent), floor, r * 1.3f), r * 1.3f, floor)
         }
 
-        drawCircle(Brush.radialGradient(listOf(Dash.Lime.copy(alpha = 0.35f + 0.15f * energy), Dash.Green.copy(alpha = 0.12f), Color.Transparent), c, r * 2.1f), r * 2.1f, c)
+        drawCircle(Brush.radialGradient(listOf(Dash.Lime.copy(alpha = 0.35f + 0.15f * energy), Dash.Green.copy(alpha = 0.12f), Color.Transparent), c, r * 2.0f), r * 2.0f, c)
 
         val shell = blobPath(c, r * 1.1f, t, 1.7f)
         drawPath(shell, Brush.radialGradient(0f to Color.Transparent, 0.78f to Dash.Lime.copy(alpha = 0.06f), 0.97f to Dash.Glow.copy(alpha = 0.32f), 1f to Color.Transparent, center = c, radius = r * 1.13f))

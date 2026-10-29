@@ -83,20 +83,22 @@ fun JellyPill(
     val glow by animateFloatAsState(if (selected) 1f else 0f, tween(180), label = "glow")
     val textColor by animateColorAsState(if (selected) Dash.Deep else Dash.Text, tween(180), label = "text")
     val shape = RoundedCornerShape(height / 2)
+    // Fewer stacked shadow/bloom passes on slow TVs; it reads the same from the couch.
+    val layers = if (LocalReducedEffects.current) 1 else 4
     Box(
         modifier
             .graphicsLayer { scaleX = grow; scaleY = grow; alpha = fade }
             .drawBehind {
                 val cr = CornerRadius(size.height / 2)
                 // Soft drop shadow, offset down: the pill floats above the scene.
-                for (k in 1..4) {
+                for (k in 1..layers) {
                     val pad = k * 2.dp.toPx()
                     drawRoundRect(Color.Black.copy(alpha = 0.13f), Offset(-pad / 2, 5.dp.toPx() + pad / 2), size.copy(width = size.width + pad, height = size.height + pad / 2), cr)
                 }
                 // Fake blur: stacked, widening translucent outlines fade into a soft bloom.
-                if (glow > 0f) for (k in 1..7) {
-                    val pad = k * 3.dp.toPx()
-                    drawRoundRect(Dash.Lime.copy(alpha = 0.09f * glow * (1f - k / 8f)), Offset(-pad, -pad), size.copy(width = size.width + pad * 2, height = size.height + pad * 2), CornerRadius(size.height / 2 + pad))
+                if (glow > 0f) for (k in 1..(layers + 3)) {
+                    val pad = k * (21f / (layers + 3)).dp.toPx()
+                    drawRoundRect(Dash.Lime.copy(alpha = (0.63f / (layers + 3)) * glow * (1f - k / (layers + 4f))), Offset(-pad, -pad), size.copy(width = size.width + pad * 2, height = size.height + pad * 2), CornerRadius(size.height / 2 + pad))
                 }
             }
             .background(
@@ -245,6 +247,7 @@ fun StatusCluster(modifier: Modifier = Modifier) {
 /** Top-left screen title on a green bar with a light glint that sweeps across now and then. */
 @Composable
 fun Header(title: String, subtitle: String?, modifier: Modifier = Modifier) {
+    val reduced = LocalReducedEffects.current
     val sweep by rememberInfiniteTransition(label = "glint").animateFloat(
         -0.3f, 2.2f, infiniteRepeatable(tween(5200, easing = LinearEasing), RepeatMode.Restart), label = "glint",
     )
@@ -257,6 +260,7 @@ fun Header(title: String, subtitle: String?, modifier: Modifier = Modifier) {
                 .background(Brush.horizontalGradient(listOf(Dash.Green.copy(alpha = 0.9f), Dash.Moss.copy(alpha = 0.6f), Color.Transparent)), RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp))
                 .drawWithContent {
                     drawContent()
+                    if (reduced) return@drawWithContent // the glint needs an offscreen layer every frame
                     val x = sweep * size.width
                     drawRect(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.3f), Color.Transparent), Offset(x - 80f, 0f), Offset(x + 80f, size.height)), blendMode = androidx.compose.ui.graphics.BlendMode.SrcAtop)
                     // Top gloss line, matching the pills.

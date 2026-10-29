@@ -95,12 +95,18 @@ class Sfx(private val enabled: () -> Boolean, private val humEnabled: () -> Bool
         runCatching { bank?.hum?.pause() }
     }
 
+    // Restarting an AudioTrack can block for tens of ms on TV audio stacks, so it never runs on the
+    // UI thread: a key press just queues the sound.
+    private val player = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "sfx-play").apply { isDaemon = true } }
+
     private fun play(track: AudioTrack?) {
         if (track == null || !enabled()) return
-        runCatching {
-            track.stop()
-            track.reloadStaticData()
-            track.play()
+        player.execute {
+            runCatching {
+                track.stop()
+                track.reloadStaticData()
+                track.play()
+            }
         }
     }
 

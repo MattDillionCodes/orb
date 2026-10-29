@@ -52,9 +52,16 @@ fun Boot(clock: State<Float>, onStart: () -> Unit, onDone: () -> Unit) {
     fun seg(a: Float, b: Float) = ((v - a) / (b - a)).coerceIn(0f, 1f)
     val fadeOut = 1f - seg(0.9f, 1f)
 
+    val reduced = LocalReducedEffects.current
     Box(Modifier.fillMaxSize().alpha(fadeOut), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(Color.Black)
+            // On slow TVs skip the full-screen fog and flash; the orb, tendrils and shockwave carry it.
+            if (reduced) {
+                val wave = seg(0.47f, 0.7f)
+                if (wave in 0.001f..0.999f) drawCircle(Dash.Glow.copy(alpha = 0.7f * (1f - wave)), size.maxDimension * 0.6f * wave, center, style = Stroke(10f * (1f - wave) + 2f))
+                return@Canvas
+            }
             val t = clock.value
             val fog = seg(0f, 0.3f)
             for (i in 0 until 5) {
@@ -87,7 +94,7 @@ fun Boot(clock: State<Float>, onStart: () -> Unit, onDone: () -> Unit) {
         // Blob gathers from nothing, then shrinks back as the wordmark takes over.
         val grow = seg(0.12f, 0.47f)
         val recede = seg(0.5f, 0.75f)
-        Orb(clock, energy = grow, modifier = Modifier.size(420.dp).scale((0.05f + 0.95f * grow) * (1f - 0.55f * recede)).offset(y = (-60 * recede).dp))
+        Orb(clock, energy = grow, modifier = Modifier.size(630.dp).scale((0.05f + 0.95f * grow) * (1f - 0.55f * recede)).offset(y = (-60 * recede).dp))
 
         val word = seg(0.55f, 0.75f)
         val glint = seg(0.7f, 0.88f)

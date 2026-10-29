@@ -2,6 +2,14 @@ package com.orbdash.ui
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,6 +79,9 @@ fun rememberClock(): State<Float> {
 /** A speck of light at depth [d] (0 = far, 1 = near): near ones are bigger, faster, and parallax more. */
 private class Mote(val x: Float, val y: Float, val d: Float, val phase: Float)
 
+/** True on TVs too slow for the full animated backdrop (decided by a quick frame-time check, or by the user). */
+val LocalReducedEffects = compositionLocalOf { false }
+
 /**
  * The living backdrop, painted far-to-near so the layers separate as the camera moves:
  * wallpaper or void → hex tunnel → fog → veins → motes → vignette and scanlines.
@@ -78,51 +89,107 @@ private class Mote(val x: Float, val y: Float, val d: Float, val phase: Float)
  * [focus]   where (0..1 of the screen) the veins and tunnel converge.
  * [camera]  small offset (fractions of the screen) that every layer shifts by, scaled by its depth.
  * [tunnel]  0..1 visibility of the hex tunnel, strong in sub-menus, faint at home.
+ *
+ * On slow TVs every see-through full-screen layer costs ~25 ms, so with [LocalReducedEffects] the
+ * whole backdrop is baked into one solid image on a background thread (~1 ms to draw), and only
+ * the motes stay live.
  */
 @Composable
 fun Ambience(clock: State<Float>, focus: Offset, camera: Offset, tunnel: Float, wallpaper: ImageBitmap?, modifier: Modifier = Modifier.fillMaxSize()) {
-    val motes = remember {
-        val r = Random(7)
-        List(60) { Mote(r.nextFloat(), r.nextFloat(), r.nextFloat(), r.nextFloat() * 6.28f) }
+    if (LocalReducedEffects.current) {
+        BakedAmbience(clock, focus, tunnel, wallpaper, modifier)
+        return
     }
-    Canvas(modifier) {
-        val t = clock.value
-        fun shift(depth: Float) = Offset(camera.x * size.width * depth, camera.y * size.height * depth)
-        val c = Offset(size.width * focus.x, size.height * focus.y)
-        val busy = if (wallpaper != null) 0.4f else 1f // calm procedural layers over a picture
-
-        drawRect(Dash.Void)
-        if (wallpaper != null) {
-            drawWallpaper(wallpaper, t, shift(-0.6f))
-            // Scrim keeps text readable over the brighter wallpapers.
-            drawRect(Color.Black.copy(alpha = 0.32f))
-        } else {
-            drawRect(Brush.radialGradient(listOf(Dash.Moss.copy(alpha = 0.85f), Dash.Deep.copy(alpha = 0.5f), Color.Transparent), c + shift(-0.3f), size.height * 0.95f))
+    val busy = if (wallpaper != null) 0.4f else 1f // calm procedural layers over a picture
+    Box(modifier) {
+        // 1. Sharp, per-frame: void and the wallpaper (a single image blit).
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Dash.Void)
+            if (wallpaper != null) {
+                drawWallpaper(wallpaper, clock.value, shift(camera, -0.6f))
+                drawRect(Color.Black.copy(alpha = 0.32f)) // scrim keeps text readable over brighter wallpapers
+            }
         }
+        // 2. Soft and slow: glow, tunnel, fog, veins, vignette, rendered small ~15 times a second.
+        CachedCanvas(clock, fps = 15f, resolution = 0.33f, modifier = Modifier.fillMaxSize(), keys = listOf(focus, camera, tunnel, busy, wallpaper == null)) { t ->
+            paintSoftLayers(t, focus, camera, tunnel, busy, withBaseGlow = wallpaper == null)
+        }
+        Motes(clock, camera, count = 60)
+        // 3. CRT scanlines never change: rendered once at full resolution, then just blitted.
+        CachedCanvas(clock, fps = 0f, resolution = 1f, modifier = Modifier.fillMaxSize()) { paintScanlines() }
+    }
+}
 
-        drawTunnel(c + shift(-0.25f), t, tunnel * busy)
+/** Reduced effects: everything except the motes in one opaque, pre-rendered image. */
+@Composable
+private fun BakedAmbience(clock: State<Float>, focus: Offset, tunnel: Float, wallpaper: ImageBitmap?, modifier: Modifier) {
+    BoxWithConstraints(modifier) {
+        val w = constraints.maxWidth
+        val h = constraints.maxHeight
+        val density = LocalDensity.current
+        val baked = remember { mutableStateOf<ImageBitmap?>(null) }
+        // Re-bake only when the scene changes (screen, wallpaper); the old image stays up meanwhile.
+        LaunchedEffect(w, h, focus, tunnel, wallpaper) {
+            baked.value = withContext(Dispatchers.Default) {
+                ImageBitmap(w, h).also { img ->
+                    CanvasDrawScope().draw(density, LayoutDirection.Ltr, androidx.compose.ui.graphics.Canvas(img), Size(w.toFloat(), h.toFloat())) {
+                        drawRect(Dash.Void)
+                        if (wallpaper != null) {
+                            drawWallpaper(wallpaper, 0f, Offset.Zero)
+                            drawRect(Color.Black.copy(alpha = 0.32f))
+                        }
+                        paintSoftLayers(20f, focus, Offset.Zero, tunnel, if (wallpaper != null) 0.4f else 1f, withBaseGlow = wallpaper == null)
+                        paintScanlines()
+                    }
+                }
+            }
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            val img = baked.value
+            if (img == null) drawRect(Dash.Void) else drawImage(img)
+        }
+        Motes(clock, Offset.Zero, count = 24)
+    }
+}
 
-        if (wallpaper == null) for (i in 0 until 4) {
-            val f = Offset(size.width * (0.5f + 0.42f * sin(t * 0.045f + i * 1.9f)), size.height * (0.5f + 0.38f * cos(t * 0.037f + i * 2.6f))) + shift(-0.4f)
+private fun DrawScope.shift(camera: Offset, depth: Float) = Offset(camera.x * size.width * depth, camera.y * size.height * depth)
+
+private fun DrawScope.paintSoftLayers(t: Float, focus: Offset, camera: Offset, tunnel: Float, busy: Float, withBaseGlow: Boolean) {
+    val c = Offset(size.width * focus.x, size.height * focus.y)
+    if (withBaseGlow) {
+        drawRect(Brush.radialGradient(listOf(Dash.Moss.copy(alpha = 0.85f), Dash.Deep.copy(alpha = 0.5f), Color.Transparent), c + shift(camera, -0.3f), size.height * 0.95f))
+        for (i in 0 until 4) {
+            val f = Offset(size.width * (0.5f + 0.42f * sin(t * 0.045f + i * 1.9f)), size.height * (0.5f + 0.38f * cos(t * 0.037f + i * 2.6f))) + shift(camera, -0.4f)
             drawCircle(Brush.radialGradient(listOf(Dash.Green.copy(alpha = 0.10f), Color.Transparent), f, size.height * 0.55f), size.height * 0.55f, f)
         }
+    }
+    drawTunnel(c + shift(camera, -0.25f), t, tunnel * busy)
+    drawVeins(c + shift(camera, -0.5f), t, busy)
+    drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(alpha = 0.78f)), center, size.maxDimension * 0.62f))
+}
 
-        drawVeins(c + shift(-0.5f), t, busy)
+private fun DrawScope.paintScanlines() =
+    drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.16f)), 0f, 4f, TileMode.Repeated))
 
+/** Tiny drifting specks: sharp, cheap, and what keeps the screen feeling alive in reduced mode. */
+@Composable
+private fun Motes(clock: State<Float>, camera: Offset, count: Int) {
+    val motes = remember(count) {
+        val r = Random(7)
+        List(count) { Mote(r.nextFloat(), r.nextFloat(), r.nextFloat(), r.nextFloat() * 6.28f) }
+    }
+    Canvas(Modifier.fillMaxSize()) {
+        val t = clock.value
         for (m in motes) {
             val speed = 0.004f + 0.02f * m.d
             val y = ((m.y - t * speed) % 1f + 1f) % 1f
             val x = m.x + 0.012f * sin(t * 0.6f + m.phase)
-            val p = Offset(x * size.width, y * size.height) + shift(-(0.3f + 1.4f * m.d))
+            val p = Offset(x * size.width, y * size.height) + shift(camera, -(0.3f + 1.4f * m.d))
             val a = (0.15f + 0.4f * m.d) * (0.6f + 0.4f * sin(t * 1.3f + m.phase))
             val r = 0.8f + 3.2f * m.d
-            if (m.d > 0.82f) drawCircle(Brush.radialGradient(listOf(Dash.Glow.copy(alpha = a * 0.5f), Color.Transparent), p, r * 5), r * 5, p)
+            if (m.d > 0.82f) drawCircle(Dash.Glow.copy(alpha = a * 0.25f), r * 3, p)
             drawCircle(Dash.Glow.copy(alpha = a), r, p)
         }
-
-        drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(alpha = 0.78f)), center, size.maxDimension * 0.62f))
-        // CRT scanlines: one tiled gradient instead of hundreds of lines.
-        drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.16f)), 0f, 4f, TileMode.Repeated))
     }
 }
 

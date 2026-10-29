@@ -66,6 +66,13 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     val lastIndexIn = remember { androidx.compose.runtime.mutableStateMapOf<String, Int>() }
     var soundsOn by remember { mutableStateOf(repo.soundsOn) }
     var humOn by remember { mutableStateOf(repo.humOn) }
+    var effectsMode by remember { mutableStateOf(repo.effectsMode) }
+    var measuredSlow by remember { mutableIntStateOf(repo.measuredSlow) }
+    val reduced = when (effectsMode) {
+        "full" -> false
+        "reduced" -> true
+        else -> measuredSlow == 1
+    }
     var wallpaper by remember { mutableStateOf(WALLPAPERS.firstOrNull { it.id == repo.wallpaperId } ?: WALLPAPERS[0]) }
     val wallpaperImage = rememberWallpaper(wallpaper)
     val energy = remember { Animatable(0f) }
@@ -82,7 +89,9 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
         add(SETTINGS)
     }
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
-    val homeItems = homeIds.map { id ->
+    // Built once per app list (reloaded each time you come back), not on every key press:
+    // it reads saved "last opened" times and formats dates, which is slow on a TV's CPU.
+    val homeItems = remember(apps, resumeApp) { homeIds.map { id ->
         val app = appsByPackage[id.removePrefix(APP)]
         when {
             id == RESUME -> MenuItem("RESUME", resumeApp!!.label, "Pick up where you left off in ${resumeApp.label}.", Ico.RESUME)
@@ -96,7 +105,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             )
             else -> MenuItem("SETTINGS", null, "Wi-Fi, picture, sound and dashboard options.", Ico.GEAR)
         }
-    }
+    } }
     homeIndex = homeIndex.coerceIn(0, homeItems.lastIndex)
 
     fun onOff(b: Boolean) = if (b) "ON" else "OFF"
@@ -127,6 +136,20 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             ) {
                 wallpaper = next
                 repo.wallpaperId = wallpaper.id
+            },
+            Entry(
+                "Visual effects",
+                when (effectsMode) {
+                    "full" -> "Everything animated. Press OK for Reduced."
+                    "reduced" -> "Background held still so slower TVs stay smooth. Press OK for Auto."
+                    else -> "This TV was checked and set to ${if (measuredSlow == 1) "Reduced" else "Full"}. Press OK for Full."
+                },
+                icon = Ico.WAVE, kind = "DASHBOARD", group = dash, okLabel = "NEXT",
+                value = if (effectsMode == "auto") "AUTO" else effectsMode.uppercase(),
+                readouts = { listOf("NOW USING" to if (reduced) "Reduced" else "Full") },
+            ) {
+                effectsMode = when (effectsMode) { "auto" -> "full"; "full" -> "reduced"; else -> "auto" }
+                repo.effectsMode = effectsMode
             },
             Entry("Sound effects", "Chimes when you move and select. Press OK to turn ${if (soundsOn) "off" else "on"}.", icon = Ico.NOTE, value = onOff(soundsOn), kind = "DASHBOARD", group = dash, okLabel = if (soundsOn) "TURN OFF" else "TURN ON") {
                 soundsOn = !soundsOn; repo.soundsOn = soundsOn
@@ -184,16 +207,34 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     // Pressing Home while already on the dashboard returns to the orb.
     LaunchedEffect(homeTicks) { if (homeTicks > 0) { booting = false; screen = Screen.Home } }
     LaunchedEffect(Unit) { focus.requestFocus() }
+    // First run: time ~1.5 s of frames with full effects. Under ~40 fps means this TV's graphics chip
+    // can't keep up, so switch to reduced effects and remember it.
+    LaunchedEffect(booting) {
+        if (booting || measuredSlow != -1 || effectsMode != "auto") return@LaunchedEffect
+        kotlinx.coroutines.delay(500)
+        val start = androidx.compose.runtime.withFrameNanos { it }
+        var frames = 0
+        var now = start
+        while (now - start < 1_500_000_000L) { now = androidx.compose.runtime.withFrameNanos { it }; frames++ }
+        val fps = frames / ((now - start) / 1e9f)
+        measuredSlow = if (fps < 40f) 1 else 0
+        repo.measuredSlow = measuredSlow
+    }
     BackHandler(enabled = !booting) { goHome() }
 
     // The "camera": veins and tunnel converge on the orb at home and slide off to the corner in menus,
     // and every selection change tilts the view slightly so the layers parallax against each other.
     val home = screen == Screen.Home
-    val veinFocus by animateOffsetAsState(if (home) Offset(0.29f, 0.5f) else Offset(0.97f, 0.12f), tween(450), label = "veins")
+    val focusTarget = if (home) Offset(0.29f, 0.5f) else Offset(0.97f, 0.12f)
+    val veinFocusAnim by animateOffsetAsState(focusTarget, tween(450), label = "veins")
+    val veinFocus = if (reduced) focusTarget else veinFocusAnim
     val tilt = if (home) (homeIndex - (homeItems.size - 1) / 2f).coerceIn(-3f, 3f) else (listIndex.coerceAtMost(8) - 4f) * 0.5f
-    val camera by animateOffsetAsState(Offset(-0.004f * tilt, -0.012f * tilt), tween(600), label = "camera")
-    val tunnel by animateFloatAsState(if (home) 0.3f else 1f, tween(500), label = "tunnel")
+    val cameraAnim by animateOffsetAsState(Offset(-0.004f * tilt, -0.012f * tilt), tween(600), label = "camera")
+    val camera = if (reduced) Offset.Zero else cameraAnim
+    val tunnelAnim by animateFloatAsState(if (home) 0.3f else 1f, tween(500), label = "tunnel")
+    val tunnel = if (reduced) (if (home) 0.3f else 1f) else tunnelAnim
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalReducedEffects provides reduced) {
     Box(
         Modifier
             .fillMaxSize()
@@ -238,5 +279,6 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             }
         }
         if (booting) Boot(clock, onStart = { sfx.boot() }, onDone = { booting = false })
+    }
     }
 }

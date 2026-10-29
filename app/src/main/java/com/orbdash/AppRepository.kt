@@ -132,6 +132,16 @@ class AppRepository(private val context: Context) {
         get() = prefs.getBoolean(KEY_HUM, false) // off by default: a humming TV is confusing
         set(value) = prefs.edit().putBoolean(KEY_HUM, value).apply()
 
+    /** "auto" (decided by [measuredSlow]), "full" or "reduced". */
+    var effectsMode: String
+        get() = prefs.getString(KEY_EFFECTS, "auto") ?: "auto"
+        set(value) = prefs.edit().putString(KEY_EFFECTS, value).apply()
+
+    /** Result of the first-run frame-time check: -1 not measured yet, 1 = this TV is too slow for full effects. */
+    var measuredSlow: Int
+        get() = prefs.getInt(KEY_SLOW, -1)
+        set(value) = prefs.edit().putInt(KEY_SLOW, value).apply()
+
     var wallpaperId: String
         get() = prefs.getString(KEY_WALLPAPER, "living") ?: "living"
         set(value) = prefs.edit().putString(KEY_WALLPAPER, value).apply()
@@ -155,6 +165,8 @@ class AppRepository(private val context: Context) {
         const val KEY_HUM = "hum_on"
         const val KEY_WALLPAPER = "wallpaper"
         const val KEY_OPENED = "opened_"
+        const val KEY_EFFECTS = "effects_mode"
+        const val KEY_SLOW = "measured_slow"
         const val KEY_INTRO_BOOT = "intro_boot"
     }
 }
