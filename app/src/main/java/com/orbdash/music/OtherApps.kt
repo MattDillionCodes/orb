@@ -17,8 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.core.app.NotificationManagerCompat
 
 /**
- * Exists only so the user can grant OrbDash "notification access". Android uses that one switch to
- * decide who may see other apps' media sessions; OrbDash never reads any notifications.
+ * Exists only so the user can grant ORB UI "notification access". Android uses that one switch to
+ * decide who may see other apps' media sessions; ORB UI never reads any notifications.
  */
 class MediaListener : NotificationListenerService()
 
@@ -26,7 +26,7 @@ class MediaListener : NotificationListenerService()
  * What another music app (Spotify, YouTube Music, ...) is playing, and remote control of it.
  *
  * Music apps publish a media session so headphones, car stereos and the lock screen can show the song
- * and send play/pause back. With notification access, OrbDash can follow those sessions too.
+ * and send play/pause back. With notification access, ORB UI can follow those sessions too.
  */
 class OtherApps(private val context: Context) {
     val access = mutableStateOf(false)
@@ -68,7 +68,7 @@ class OtherApps(private val context: Context) {
         use(null)
     }
 
-    /** Opens the system screen where the user switches notification access on for OrbDash. */
+    /** Opens the system screen where the user switches notification access on for ORB UI. */
     fun openAccessSettings(): Boolean {
         val detail = if (Build.VERSION.SDK_INT >= 30) Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
             .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component.flattenToString()) else null

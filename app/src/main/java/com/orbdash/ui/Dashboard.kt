@@ -238,11 +238,11 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
         // Another music app: show what it's playing, or how to connect them.
         val otherGroup = "OTHER MUSIC APPS"
         if (!others.access.value) add(Entry(
-            "Connect music apps", "See and control what Spotify or YouTube Music is playing. Switch on OrbDash on the next screen.",
+            "Connect music apps", "See and control what Spotify or YouTube Music is playing. Switch on ORB UI on the next screen.",
             icon = Ico.WAVE, kind = "APPS", group = otherGroup, okLabel = "ALLOW",
         ) {
             if (!others.openAccessSettings()) android.widget.Toast.makeText(context,
-                "This TV hides that setting. Switch on OrbDash's notification access from a computer with adb (see the README).", android.widget.Toast.LENGTH_LONG).show()
+                "This TV hides that setting. Switch on ORB UI's notification access from a computer with adb (see the README).", android.widget.Toast.LENGTH_LONG).show()
         })
         else if (others.app.value != null) add(Entry(
             others.title.value ?: "Unknown song", listOfNotNull(others.artist.value, "from ${others.app.value}").joinToString(" · ") + ". Press OK for the light show; the remote controls ${others.app.value}.",
@@ -263,7 +263,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             ) { playTrack(i) })
         }
         if (!canRead) add(Entry(
-            "Find music on this TV", "Let OrbDash see songs on USB drives and in the TV's Music folder.", icon = Ico.STORE, kind = "LIBRARY",
+            "Find music on this TV", "Let ORB UI see songs on USB drives and in the TV's Music folder.", icon = Ico.STORE, kind = "LIBRARY",
             group = "ON THIS TV", okLabel = "ALLOW",
         ) { readPermission.launch(com.orbdash.music.MusicLibrary.readPermission) })
         else if (list.size <= 1) add(Entry(
@@ -350,7 +350,7 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     BackHandler(enabled = !booting) { if (saver) saver = false else goHome() }
 
     // Screensaver: after [saverMinutes] with no button presses on the dashboard. Not over the light show,
-    // which is a screensaver of its own, and the clock restarts whenever OrbDash comes back to the front.
+    // which is a screensaver of its own, and the clock restarts whenever ORB UI comes back to the front.
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
     androidx.compose.runtime.DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->

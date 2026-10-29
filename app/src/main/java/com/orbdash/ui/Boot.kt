@@ -99,7 +99,7 @@ fun Boot(clock: State<Float>, onStart: () -> Unit, onDone: () -> Unit) {
         val word = seg(0.55f, 0.75f)
         val glint = seg(0.7f, 0.88f)
         BasicText(
-            "O R B D A S H",
+            "O R B   U I",
             style = dashText(56.sp, Dash.Core, bold = true, spacing = 6.sp),
             modifier = Modifier
                 .offset(y = (110 + 30 * (1f - word)).dp)

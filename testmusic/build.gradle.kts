@@ -1,4 +1,4 @@
-// A tiny stand-in for Spotify or YouTube Music, for testing OrbDash's "other music apps" support on
+// A tiny stand-in for Spotify or YouTube Music, for testing ORB UI's "other music apps" support on
 // the emulator, which can't run the real apps. Never shipped; the run script installs it only on OrbDash_TV.
 plugins {
     id("com.android.application")

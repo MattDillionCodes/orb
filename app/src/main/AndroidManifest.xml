@@ -24,10 +24,10 @@
     </queries>
 
     <application
-        android:label="OrbDash"
+        android:label="ORB UI"
         android:icon="@drawable/banner"
         android:banner="@drawable/banner"
-        android:theme="@style/Theme.OrbDash">
+        android:theme="@style/Theme.OrbUI">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -39,18 +39,18 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Lets the TV offer OrbDash as the Home app. -->
+            <!-- Lets the TV offer ORB UI as the Home app. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <!-- Only for "notification access", which lets OrbDash follow other music apps' playback. -->
+        <!-- Only for "notification access", which lets ORB UI follow other music apps' playback. -->
         <service
             android:name=".music.MediaListener"
             android:exported="true"
-            android:label="OrbDash music"
+            android:label="ORB UI music"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

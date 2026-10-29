@@ -1,4 +1,4 @@
-# OrbDash
+# ORB UI
 
 A home screen for Google TV and Android TV inspired by the green-orb console dashboard of the early 2000s.
 Instead of rows of tiles, you get a breathing gel orb, glowing menu pods on tethers, synthesized UI sounds, a music player with a reactive light show, and a drifting screensaver.
@@ -35,7 +35,7 @@ You need a computer with [adb](https://developer.android.com/tools/adb) and a TV
    ```
 
    Accept the debugging prompt on the TV the first time.
-4. Open OrbDash from the TV's app list. It doesn't replace your home screen unless you choose to: pressing Home asks which to use on some TVs, and on others it must be set with adb.
+4. Open ORB UI from the TV's app list. It doesn't replace your home screen unless you choose to: pressing Home asks which to use on some TVs, and on others it must be set with adb.
 
 To remove it: `adb uninstall com.orbdash`.
 
@@ -55,14 +55,14 @@ Build output goes to `app/build.nosync/` (the `.nosync` suffix keeps iCloud from
 ./scripts/run-emulator.sh
 ```
 
-This builds the app and runs it on its own Android TV emulator, `OrbDash_TV`: it creates the emulator the first time, boots it on a free port, installs OrbDash and makes it that emulator's home screen.
+This builds the app and runs it on its own Android TV emulator, `OrbDash_TV`: it creates the emulator the first time, boots it on a free port, installs ORB UI and makes it that emulator's home screen.
 It never touches other emulators or a real TV.
 Arrow keys and Enter act as the remote's D-pad and OK; Esc is Back.
 
 ## Music from other apps
 
 The Music screen can follow Spotify, YouTube Music and other music apps: it shows what's playing, the remote controls it, and the light show reacts to the TV's sound.
-This needs OrbDash's **notification access**, which the Music screen offers to open. OrbDash uses it only to see media playback, never to read notifications.
+This needs ORB UI's **notification access**, which the Music screen offers to open. ORB UI uses it only to see media playback, never to read notifications.
 On a TV whose Settings hide that switch, turn it on from a computer:
 
 ```bash
@@ -92,7 +92,7 @@ Notes:
 Music problems are logged under one tag:
 
 ```bash
-adb logcat -s OrbDashMusic
+adb logcat -s OrbUIMusic
 ```
 
 ## Project layout
@@ -112,4 +112,4 @@ The code is under the [MIT License](LICENSE). Exceptions, also listed in [LICENS
 - The six wallpapers (`app/src/main/res/drawable-nodpi/wp_*.jpg`) are © MattDillionCodes, all rights reserved.
 - The font, Saira Semi Condensed, is under the [SIL Open Font License](licenses/Saira-OFL.txt).
 
-OrbDash is a fan-made project. It is not affiliated with, endorsed by, or connected to Microsoft or Xbox, and contains no Microsoft code, artwork or sounds. The orb, interface sounds and demo music were made for this project.
+ORB UI is a fan-made project. It is not affiliated with, endorsed by, or connected to Microsoft or Xbox, and contains no Microsoft code, artwork or sounds. The orb, interface sounds and demo music were made for this project.

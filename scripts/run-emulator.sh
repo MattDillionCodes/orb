@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build OrbDash and run it on its own dedicated Android TV emulator (OrbDash_TV).
+# Build ORB UI and run it on its own dedicated Android TV emulator (OrbDash_TV).
 # Never touches other emulators or physical TVs: every adb call targets the serial
 # whose AVD name is verified to be OrbDash_TV.
 set -euo pipefail
@@ -44,7 +44,7 @@ fi
 [ "$(avd_name "$SERIAL")" = "$AVD" ] || { echo "Could not reach $AVD (see /tmp/orbdash-emulator.log)"; exit 1; }
 echo "Using $SERIAL ($AVD)"
 
-# 3. Build, install, and make OrbDash the Home app on this emulator only.
+# 3. Build, install, and make ORB UI the Home app on this emulator only.
 "$ROOT/gradlew" -p "$ROOT" :app:assembleDebug -q
 "$ADB" -s "$SERIAL" install -r "$ROOT/app/build.nosync/outputs/apk/debug/app-debug.apk" >/dev/null
 "$ADB" -s "$SERIAL" shell cmd package set-home-activity com.orbdash/.MainActivity >/dev/null
@@ -53,4 +53,4 @@ echo "Using $SERIAL ($AVD)"
 # Let the Music screen follow other music apps (the same switch as Settings > notification access).
 "$ADB" -s "$SERIAL" shell cmd notification allow_listener com.orbdash/com.orbdash.music.MediaListener >/dev/null 2>&1 || true
 "$ADB" -s "$SERIAL" shell am start -n com.orbdash/.MainActivity >/dev/null
-echo "OrbDash is running on $AVD."
+echo "ORB UI is running on $AVD."

@@ -119,7 +119,7 @@ class MusicPlayer(private val context: Context) {
         }
     }
 
-    /** [reason] goes to the log, so an unexpected pause can be traced later (adb logcat -s OrbDashMusic). */
+    /** [reason] goes to the log, so an unexpected pause can be traced later (adb logcat -s OrbUIMusic). */
     fun pause(reason: String = "pause pressed") {
         if (playing.value) Log.i(TAG, "Paused: $reason")
         wantPlaying = false
@@ -220,6 +220,6 @@ class MusicPlayer(private val context: Context) {
     }
 }
 
-private const val TAG = "OrbDashMusic"
+private const val TAG = "OrbUIMusic"
 
 class Bands(val bass: Float, val mid: Float, val high: Float, val beat: Boolean, val wave: ByteArray?)

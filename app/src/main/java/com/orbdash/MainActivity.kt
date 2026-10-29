@@ -67,11 +67,11 @@ class MainActivity : ComponentActivity() {
         sfx.stopHum() // never hum over someone's movie
     }
 
-    // Music pauses on stop, not pause: pressing Home inside OrbDash briefly pauses the activity, and a
+    // Music pauses on stop, not pause: pressing Home inside ORB UI briefly pauses the activity, and a
     // permission dialog does too, but neither actually leaves the screen.
     override fun onStop() {
         super.onStop()
-        player.pause("OrbDash left the screen") // don't keep music going behind another app
+        player.pause("ORB UI left the screen") // don't keep music going behind another app
     }
 
     override fun onDestroy() {

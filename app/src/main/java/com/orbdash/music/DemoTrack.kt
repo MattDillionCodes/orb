@@ -28,7 +28,7 @@ object DemoTrack {
         val total = (BARS * 4 * (60.0 / BPM) * RATE).toInt()
         if (file.length() != 44L + total * 2L) render(file) // missing, or cut short by a crash mid-write
         val ms = (BARS * 4 * 60_000.0 / BPM).toLong()
-        return Track("Orb Drift", "OrbDash", "Built-in demo", ms, Uri.fromFile(file))
+        return Track("Orb Drift", "ORB UI", "Built-in demo", ms, Uri.fromFile(file))
     }
 
     private fun render(file: File) {
