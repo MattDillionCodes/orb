@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 320x180 TV banner: a glowing green orb on black. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp">
+    <item><shape><solid android:color="#020802" /></shape></item>
+    <item android:gravity="center" android:width="150dp" android:height="150dp">
+        <shape android:shape="oval">
+            <gradient android:type="radial" android:gradientRadius="75dp"
+                android:startColor="#E6FF9C" android:centerColor="#5FD11B" android:endColor="#00000000" />
+        </shape>
+    </item>
+</layer-list>
