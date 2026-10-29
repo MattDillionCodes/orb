@@ -49,7 +49,7 @@ jobs:
 
       - name: Check it's signed with the release key
         run: |
-          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          APK=$(find app -path "*outputs/apk/release/*.apk" | head -1)  # this project builds into build.nosync/
           echo "Built $APK"
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
           "$APKSIGNER" verify --print-certs "$APK" | tee cert.txt
