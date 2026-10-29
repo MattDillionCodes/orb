@@ -46,5 +46,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <!-- Only for "notification access", which lets OrbDash follow other music apps' playback. -->
+        <service
+            android:name=".music.MediaListener"
+            android:exported="true"
+            android:label="OrbDash music"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

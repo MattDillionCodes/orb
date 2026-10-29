@@ -73,7 +73,7 @@ class VisualRenderer(private val player: MusicPlayer) {
             val frameStart = SystemClock.uptimeMillis()
             val t = (frameStart - start) / 1000f
             val b = player.bands(t)
-            val playing = player.playing.value
+            val playing = player.audible()
             val src = buffers[cur]
             val next = (cur + 1) % 3
             val c = Canvas(buffers[next])

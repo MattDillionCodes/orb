@@ -61,9 +61,15 @@ fun VisualizerScreen(player: MusicPlayer, renderer: VisualRenderer, clock: State
         onDispose { lifecycle.removeObserver(observer); renderer.stop() }
     }
 
-    val tracks = player.tracks.value
-    val track = tracks.getOrNull(player.current.intValue)
-    val playing = player.playing.value
+    // Either one of our tracks, or whatever the followed music app is playing.
+    val others = player.others
+    val following = player.followingOther.value
+    val own = player.tracks.value.getOrNull(player.current.intValue)
+    val title = if (following) others.title.value ?: others.app.value else own?.title
+    val details = if (following) listOfNotNull(others.artist.value, others.album.value?.takeIf { it.isNotBlank() }, others.app.value?.let { "in $it" })
+        else listOfNotNull(own?.artist, own?.album?.takeIf { it.isNotBlank() })
+    val hasMusic = title != null
+    val playing = player.audible()
     var posMs by remember { mutableIntStateOf(0) }
     var durMs by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { posMs = player.positionMs(); durMs = player.durationMs(); delay(500) } }
@@ -85,11 +91,11 @@ fun VisualizerScreen(player: MusicPlayer, renderer: VisualRenderer, clock: State
                 .padding(start = 48.dp, top = 32.dp),
         ) {
             BasicText("NOW PLAYING  ·  ${VisualRenderer.STYLES[renderer.style]}", style = dashText(15.sp, Dash.Glow, bold = true, spacing = 4.sp))
-            BasicText(track?.title ?: "Nothing playing", style = dashText(40.sp, Dash.Core, bold = true), maxLines = 1, modifier = Modifier.padding(top = 4.dp))
-            BasicText(listOfNotNull(track?.artist, track?.album?.takeIf { it.isNotBlank() }).joinToString("  ·  "), style = dashText(20.sp, Dash.Text), maxLines = 1)
+            BasicText(title ?: "Nothing playing", style = dashText(40.sp, Dash.Core, bold = true), maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+            BasicText(details.joinToString("  ·  "), style = dashText(20.sp, Dash.Text), maxLines = 1)
         }
 
-        if (!playing && track != null) {
+        if (!playing && hasMusic) {
             BasicText("PAUSED", style = dashText(30.sp, Dash.Core, bold = true, spacing = 10.sp), modifier = Modifier.align(Alignment.Center).alpha(0.85f))
         }
 

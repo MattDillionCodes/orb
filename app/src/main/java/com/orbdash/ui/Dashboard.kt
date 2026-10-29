@@ -98,12 +98,18 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     fun plural(n: Int) = if (n == 1) "1 app" else "$n apps"
     // Built once per app list (reloaded each time you come back), not on every key press:
     // it reads saved "last opened" times and formats dates, which is slow on a TV's CPU.
-    val musicPlaying = player.playing.value
-    val homeItems = remember(apps, resumeApp, musicPlaying) { homeIds.map { id ->
+    val others = player.others
+    // "playing" for our own songs, "Spotify · playing" when another music app is.
+    val musicSub = when {
+        player.playing.value -> "playing"
+        others.playing.value -> "${others.app.value} · playing"
+        else -> null
+    }
+    val homeItems = remember(apps, resumeApp, musicSub) { homeIds.map { id ->
         val app = appsByPackage[id.removePrefix(APP)]
         when {
             id == RESUME -> MenuItem("RESUME", resumeApp!!.label, "Pick up where you left off in ${resumeApp.label}.", Ico.RESUME)
-            id == MUSIC -> MenuItem("MUSIC", if (musicPlaying) "playing" else null, "Your music with a light show, like the original's visualizer.", Ico.NOTE)
+            id == MUSIC -> MenuItem("MUSIC", musicSub, "Your music with a light show, like the original's visualizer.", Ico.NOTE)
             app != null -> MenuItem(
                 label = app.label,
                 // categorize() labels each app (WATCH / MUSIC / GAMES); plain apps get no label.
@@ -182,10 +188,11 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
     }
     // A track waiting for the permission answer: the system dialog pauses the app, so playback
     // starts only once it's closed (otherwise the song would sit paused behind the dialog).
-    var pendingTrack by remember { mutableIntStateOf(-1) }
+    var pendingStart by remember { mutableStateOf<(() -> Unit)?>(null) }
     fun startTrack(i: Int) { player.play(i); wokeAt = clock.value; screen = Screen.Visualizer }
+    fun showOther() { player.followOther(); wokeAt = clock.value; screen = Screen.Visualizer }
     val analysePermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {
-        if (pendingTrack >= 0) { startTrack(pendingTrack); pendingTrack = -1 }
+        pendingStart?.invoke(); pendingStart = null
     }
     LaunchedEffect(screen == Screen.Section(MUSIC), musicScan) {
         if (screen != Screen.Section(MUSIC) && player.tracks.value.isNotEmpty()) return@LaunchedEffect
@@ -193,14 +200,15 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             listOf(com.orbdash.music.DemoTrack.get(context)) + com.orbdash.music.MusicLibrary.scan(context)
         }
     }
-    fun playTrack(i: Int) {
-        // Sound analysis needs this permission; ask once, before the first song starts.
+    // Sound analysis needs this permission; ask once, before the first light show starts.
+    fun withAnalysis(start: () -> Unit) {
         if (!com.orbdash.music.MusicLibrary.canAnalyse(context) && !repo.askedAnalyse) {
             repo.askedAnalyse = true
-            pendingTrack = i
+            pendingStart = start
             analysePermission.launch(android.Manifest.permission.RECORD_AUDIO)
-        } else startTrack(i)
+        } else start()
     }
+    fun playTrack(i: Int) = withAnalysis { startTrack(i) }
     fun musicEntries(): List<Entry> = buildList {
         val list = player.tracks.value
         val cur = list.getOrNull(player.current.intValue)
@@ -208,6 +216,24 @@ fun Dashboard(apps: List<TvApp>, lastUsedPackage: String?, homeTicks: Int, repo:
             "Now playing", "${cur.title} · ${cur.artist}. Press OK to show the light show.", icon = Ico.WAVE, kind = "PLAYER",
             group = "NOW PLAYING", okLabel = "SHOW", value = if (player.playing.value) "PLAYING" else "PAUSED",
         ) { wokeAt = clock.value; screen = Screen.Visualizer })
+        // Another music app: show what it's playing, or how to connect them.
+        val otherGroup = "OTHER MUSIC APPS"
+        if (!others.access.value) add(Entry(
+            "Connect music apps", "See and control what Spotify or YouTube Music is playing. Switch on OrbDash on the next screen.",
+            icon = Ico.WAVE, kind = "APPS", group = otherGroup, okLabel = "ALLOW",
+        ) {
+            if (!others.openAccessSettings()) android.widget.Toast.makeText(context,
+                "This TV hides that setting. Switch on OrbDash's notification access from a computer with adb (see the README).", android.widget.Toast.LENGTH_LONG).show()
+        })
+        else if (others.app.value != null) add(Entry(
+            others.title.value ?: "Unknown song", listOfNotNull(others.artist.value, "from ${others.app.value}").joinToString(" · ") + ". Press OK for the light show; the remote controls ${others.app.value}.",
+            icon = Ico.WAVE, kind = others.app.value!!.uppercase(), group = otherGroup, okLabel = "SHOW",
+            value = if (others.playing.value) "PLAYING" else "PAUSED",
+        ) { withAnalysis { showOther() } })
+        else add(Entry(
+            "Nothing playing in other apps", "Start a song in Spotify, YouTube Music or another music app, then come back here.",
+            icon = Ico.INFO, kind = "APPS", group = otherGroup,
+        ))
         list.forEachIndexed { i, t ->
             val mins = t.durationMs / 60_000; val secs = (t.durationMs / 1000) % 60
             add(Entry(

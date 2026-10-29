@@ -14,13 +14,16 @@ class MainActivity : ComponentActivity() {
     private val lastUsed = mutableStateOf<String?>(null)
     /** Bumped when Home is pressed while we're already in front, so the UI can return to the orb. */
     private val homeTicks = mutableStateOf(0)
+    private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = AppRepository(this)
         sfx = Sfx(enabled = { repo.soundsOn }, humEnabled = { repo.humOn })
-        // Music and the ambient hum never play together.
-        player = com.orbdash.music.MusicPlayer(this).apply { onPlayingChanged = { playing -> if (playing) sfx.stopHum() else sfx.startHum() } }
+        player = com.orbdash.music.MusicPlayer(this).apply {
+            onPlayingChanged = { syncHum() }
+            others.onPlayingChanged = { syncHum() }
+        }
         setContent {
             Dashboard(
                 apps = apps.value,
@@ -43,17 +46,26 @@ class MainActivity : ComponentActivity() {
             val loaded = repo.loadApps()
             runOnUiThread { apps.value = loaded }
         }
-        if (!player.playing.value) sfx.startHum()
+        resumed = true
+        player.others.connect() // notification access may have just been switched on
+        syncHum()
+    }
+
+    /** Music (ours or another app's) and the ambient hum never play together, and nothing hums in the background. */
+    private fun syncHum() {
+        if (resumed && !player.playing.value && !player.others.playing.value) sfx.startHum() else sfx.stopHum()
     }
 
     override fun onPause() {
         super.onPause()
+        resumed = false
         sfx.stopHum() // never hum over someone's movie
         player.pause() // and don't keep music going behind another app
     }
 
     override fun onDestroy() {
         player.release()
+        player.others.disconnect()
         super.onDestroy()
     }
 

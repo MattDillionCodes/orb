@@ -50,5 +50,7 @@ echo "Using $SERIAL ($AVD)"
 "$ADB" -s "$SERIAL" shell cmd package set-home-activity com.orbdash/.MainActivity >/dev/null
 # The stock TV launcher always wins the Home button, so switch it off here (undo: pm enable).
 "$ADB" -s "$SERIAL" shell pm disable-user --user 0 com.google.android.tvlauncher >/dev/null 2>&1 || true
+# Let the Music screen follow other music apps (the same switch as Settings > notification access).
+"$ADB" -s "$SERIAL" shell cmd notification allow_listener com.orbdash/com.orbdash.music.MediaListener >/dev/null 2>&1 || true
 "$ADB" -s "$SERIAL" shell am start -n com.orbdash/.MainActivity >/dev/null
 echo "OrbDash is running on $AVD."

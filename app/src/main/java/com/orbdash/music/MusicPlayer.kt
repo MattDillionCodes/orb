@@ -20,11 +20,18 @@ data class Track(val title: String, val artist: String, val album: String, val d
  * RECORD_AUDIO permission for that even though it only reads this app's output. Without the
  * permission (or if the TV refuses), [bands] falls back to a gentle synthetic pulse so the light
  * show still runs, just not in time with the music.
+ *
+ * It can also follow another music app instead ([followOther]): the remote then controls that app
+ * through [others], and analysis listens to everything the TV plays (audio session 0), which some
+ * TVs refuse. In that case the synthetic pulse takes over, the same as above.
  */
 class MusicPlayer(private val context: Context) {
     val tracks = mutableStateOf<List<Track>>(emptyList())
     val current = mutableIntStateOf(-1)
     val playing = mutableStateOf(false)
+    val others = OtherApps(context)
+    /** True while the light show follows another app rather than one of our tracks. */
+    val followingOther = mutableStateOf(false)
 
     private var player: MediaPlayer? = null
     private var visualizer: Visualizer? = null
@@ -43,6 +50,8 @@ class MusicPlayer(private val context: Context) {
     fun play(index: Int) {
         val list = tracks.value
         if (index !in list.indices) return
+        others.pause() // one song at a time: hush the other app
+        followingOther.value = false
         release()
         current.intValue = index
         val mp = MediaPlayer()
@@ -57,20 +66,32 @@ class MusicPlayer(private val context: Context) {
         }.onFailure { setPlaying(false) }
     }
 
+    /** Show the light show for whatever another app is playing; our own track stops. */
+    fun followOther() {
+        release()
+        current.intValue = -1
+        followingOther.value = true
+        attachVisualizer(0) // session 0 = the TV's whole output mix
+    }
+
+    /** Whether the music the light show follows is playing: ours, or the other app's. */
+    fun audible() = if (followingOther.value) others.playing.value else playing.value
+
     fun toggle() {
+        if (followingOther.value) return others.toggle()
         val mp = player ?: return play(current.intValue.coerceAtLeast(0))
         runCatching { if (mp.isPlaying) { mp.pause(); setPlaying(false) } else { mp.start(); setPlaying(true) } }
     }
 
     fun pause() { runCatching { player?.takeIf { it.isPlaying }?.pause() }; setPlaying(false) }
-    fun next() { val n = tracks.value.size; if (n > 0) play((current.intValue + 1) % n) }
-    fun previous() { val n = tracks.value.size; if (n > 0) play((current.intValue - 1 + n) % n) }
+    fun next() { if (followingOther.value) return others.next(); val n = tracks.value.size; if (n > 0) play((current.intValue + 1) % n) }
+    fun previous() { if (followingOther.value) return others.previous(); val n = tracks.value.size; if (n > 0) play((current.intValue - 1 + n) % n) }
 
-    fun positionMs(): Int = runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
-    fun durationMs(): Int = runCatching { player?.duration ?: 0 }.getOrDefault(0)
+    fun positionMs(): Int = if (followingOther.value) others.positionMs() else runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
+    fun durationMs(): Int = if (followingOther.value) others.durationMs() else runCatching { player?.duration ?: 0 }.getOrDefault(0)
 
     /** Re-try analysis after the user grants the permission mid-song. */
-    fun retryAnalysis() { player?.let { attachVisualizer(it.audioSessionId) } }
+    fun retryAnalysis() { if (followingOther.value) attachVisualizer(0) else player?.let { attachVisualizer(it.audioSessionId) } }
 
     fun release() {
         runCatching { visualizer?.release() }; visualizer = null; analysing = false
@@ -103,12 +124,12 @@ class MusicPlayer(private val context: Context) {
      */
     fun bands(t: Float): Bands {
         val f = fft
-        val (b, m, h) = if (analysing && f != null && playing.value) {
+        val (b, m, h) = if (analysing && f != null && audible()) {
             // Visualizer FFT: pairs of (real, imaginary) bytes; bin k ≈ k * sampleRate / captureSize.
             fun mag(k: Int) = hypot(f[2 * k].toFloat(), f[2 * k + 1].toFloat()) / 128f
             fun avg(from: Int, to: Int) = (from until to.coerceAtMost(f.size / 2)).map(::mag).average().toFloat()
             Triple(avg(1, 5) * 1.6f, avg(5, 40) * 2.6f, avg(40, 160) * 5f)
-        } else if (playing.value) {
+        } else if (audible()) {
             // No analysis available: a calm ~96 BPM pulse so it still breathes.
             val beat = (t * 1.6f) % 1f
             Triple(0.55f * kotlin.math.exp(-beat * 6f) + 0.15f, 0.3f + 0.15f * sin(t * 2.3f), 0.2f + 0.1f * sin(t * 5.1f))
