@@ -6,10 +6,13 @@ a breathing gel orb, jelly menu pods on glowing tethers, a hex-tunnel backdrop, 
 ## Build and run
 
 ```bash
-./gradlew :app:installDebug
+./scripts/run-emulator.sh
 ```
 
-Then launch **OrbDash** from the TV's app list. It also registers as a Home app, so the TV can offer it as the launcher.
+This builds the app and runs it on its own dedicated Android TV emulator, `OrbDash_TV`.
+The script creates the emulator the first time and boots it on a free port. It then installs OrbDash and makes it that emulator's Home screen.
+It never touches other emulators or a real TV.
+Arrow keys and Enter on your keyboard act as the remote's D-pad and OK; Esc is Back.
 
 ## Layout
 
